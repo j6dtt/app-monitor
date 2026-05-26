@@ -1,0 +1,524 @@
+# CLAUDE.md — App-Monitor Project
+
+This file provides full context for continuing this project in Claude Code.
+Do not delete or modify this file — it is the source of truth for the project.
+
+---
+
+## Project Goal
+
+Build a centralized log monitoring system for Docker containers and Kubernetes pods
+running across multiple hosts. The end goal is to know in real time if any application
+or container is down, and to detect ERROR/WARNING conditions across all services.
+
+---
+
+## System Architecture
+
+```
+Docker hosts (any network)
+  App stdout → Docker gelf log driver → GELF
+                                          └─→ logship (GELF→CEF filter)
+                                                └─→ HSG security device (UDP)
+                                                      └─→ CEF→GELF conversion
+                                                            └─→ app-monitor :12202 (TCP)
+
+Kubernetes pods (same cluster as app-monitor)
+  App stdout + applog GELF sender → GELF UDP direct → app-monitor :12201
+
+app-monitor
+  └── gelf_monitor.py — receives GELF, classifies events, serves HTTPS dashboard
+```
+
+---
+
+## What Has Been Built
+
+### 1. `applog/` — Python logging package (dropped into each app)
+
+A reusable Python package that every app imports to emit structured logs,
+lifecycle events, and heartbeats to stdout. Docker captures stdout and the
+gelf log driver ships it to the central monitor.
+
+**Files:**
+```
+applog/
+├── __init__.py        — package entry point, exports all public symbols
+├── logging_setup.py   — JSON formatter, get_logger() function
+├── lifecycle.py       — emit(), install_crash_handler(), register_shutdown_hooks()
+└── heartbeat.py       — Heartbeat class, emits HEARTBEAT log every N seconds
+```
+
+**How it is used in any Python app:**
+```python
+from applog import emit, install_crash_handler, register_shutdown_hooks, Heartbeat
+
+if __name__ == "__main__":
+    install_crash_handler()               # logs CRASH on unhandled exception
+    register_shutdown_hooks()             # logs SHUTDOWN on docker stop / SIGTERM
+    emit("STARTUP")                       # logs that the app is starting
+    emit("READY")                         # logs that the app finished initialising
+    Heartbeat(interval_seconds=30).start() # emits HEARTBEAT every 30s in background
+    your_existing_blocking_call()          # your app runs here
+```
+
+**For gunicorn apps** — use `gunicorn_config.py` hooks instead of `__main__`:
+```python
+# gunicorn_config.py (after eventlet.monkey_patch() if used)
+from applog import emit, install_crash_handler, Heartbeat
+
+_heartbeat = None
+
+def on_starting(server):   emit("STARTUP")
+def when_ready(server):
+    global _heartbeat
+    emit("READY")
+    _heartbeat = Heartbeat(interval_seconds=30)
+    _heartbeat.start()
+def on_exit(server):       emit("SHUTDOWN")
+def post_fork(server, worker):
+    install_crash_handler()
+```
+
+**Important rules:**
+- These five lines always go inside `if __name__ == "__main__":`, never at module level
+- Order is always: install_crash_handler → register_shutdown_hooks → emit STARTUP →
+  emit READY → Heartbeat → blocking call
+- `emit()` takes no required arguments beyond the event name — always just `emit("READY")`
+- The package directory is named `applog` (not `logging` — that shadows stdlib)
+- No pip dependencies — stdlib only
+
+**What each module does:**
+
+`logging_setup.py`
+- Provides `get_logger(name)` which returns a standard Python logger
+- All log output is formatted as a single JSON object per line to stdout
+- JSON fields: timestamp, level, logger, message, service, version, host
+- Extra fields passed via `extra={"_x_key": value}` appear as `"key": value` in JSON
+
+`lifecycle.py`
+- `install_crash_handler()` — replaces sys.excepthook to catch unhandled exceptions
+  and log them as CRASH events before the process dies
+- `register_shutdown_hooks()` — installs SIGTERM handler and atexit hook to log
+  SHUTDOWN when docker stop is called or the process exits cleanly
+- `emit(event, **kwargs)` — logs a structured lifecycle event (STARTUP, READY,
+  SHUTDOWN, CRASH)
+
+`heartbeat.py`
+- `Heartbeat(interval_seconds=30)` — creates a daemon thread that calls
+  `log.info("HEARTBEAT", extra={"_x_event": "HEARTBEAT"})` every N seconds
+- The monitor declares a container DOWN if it stops receiving any logs for
+  longer than --heartbeat-timeout seconds (default 90s)
+- Call `.start()` after creating it
+
+**Pending — K8s direct GELF sender:**
+A `gelf_sender.py` module is planned but not yet built. When `GELF_HOST` env var is
+set, applog will send GELF packets directly over UDP to app-monitor in addition to
+writing to stdout — enabling K8s pod monitoring without a log collector DaemonSet.
+
+---
+
+### 2. `data/gelf_monitor.py` — Central log receiver + web dashboard
+
+A standalone Python script that runs on a dedicated host (Docker or Kubernetes).
+Listens for GELF packets and serves a live HTTPS web dashboard.
+
+**No pip dependencies — stdlib only.**
+
+**Key behaviour:**
+
+- Listens on UDP and TCP port 12201 for standard GELF (from K8s pods or Docker)
+- Listens on TCP port 12202 for CEF→GELF inbound (from HSG in production)
+- Parses the GELF envelope to extract host, container name, timestamp
+- Parses `short_message` as JSON to extract your app's structured fields
+- Detects ERROR/WARNING by scanning the message text and your app's level field
+- GELF numeric level (stderr=ERROR) is only trusted when `short_message` is JSON —
+  prevents false positives from containers writing plain text to stderr
+- Detects lifecycle events (STARTUP, READY, SHUTDOWN, CRASH) from the event field
+- Tracks last-seen time per container — declares DOWN after silence > timeout
+- Emits RECOVERED when a DOWN container resumes sending logs
+- Prints coloured output to stdout
+- Optionally writes alerts to a file (--alert-log)
+- Serves web dashboard on HTTPS port 4443 (configurable)
+
+**Command line arguments:**
+```
+--bind               Network interface (default: 0.0.0.0 = all interfaces)
+--udp-port           UDP listen port (default: 12201)
+--tcp-port           TCP listen port (default: 12201)
+--cef-port           CEF→GELF TCP listen port (default: 12202)
+--no-udp             Disable UDP listener
+--no-tcp             Disable TCP listener
+--no-cef             Disable CEF listener
+--heartbeat-timeout  Seconds of silence before DOWN alert (default: 90)
+--watchdog-interval  How often to check for silent containers (default: 15s)
+--keywords           Words to scan for — replaces default list entirely
+--alert-log          File path for alert-only output (WARNING and above)
+--raw                Print every raw GELF packet as received — use for debugging
+--web-port           Web dashboard port (default: 4443)
+--no-web             Disable the web dashboard
+--cert               TLS certificate file (PEM) for HTTPS dashboard
+--key                TLS private key file (PEM) for HTTPS dashboard
+```
+
+**The `--raw` flag is the primary debugging tool.** Run with `--raw` when first
+deploying to verify packets are arriving and to see exactly what Docker sends.
+
+---
+
+### 3. `data/dashboard.html` — Web dashboard UI
+
+A separate HTML file read from disk on every request — edit the UI and refresh
+the browser without restarting the monitor.
+
+**Dashboard sections (top to bottom):**
+
+1. **Container Status** — one card per container showing:
+   - Colour-coded border: green (UP), amber (active alert), red (DOWN)
+   - Pulsing dot for DOWN containers
+   - `♥ Xs` live counter — seconds since last log received, ticks every second
+   - Alert badge: CRIT / ERR / WARN / DOWN (red/amber), or ACK (blue) when acknowledged
+   - Ack / Clear button (see Acknowledge section below)
+   - Remove button — removes container and history from the live session (no restart needed)
+   - Click card to jump to that container's stream
+
+2. **Session Stats** — per-container message and alert counts with "since HH:MM"
+   timestamp showing when the current monitor session started (all data is
+   in-memory; counts reset on monitor restart)
+
+3. **Alert Stream** — real-time log feed for one selected container at a time:
+   - Container selector dropdown + Connect/Disconnect button
+   - Filter chips: ALL / DOWN / RECOVERED / ERR / WARN / CRIT / CRASH /
+     STARTUP-READY-SHUTDOWN / HB
+   - History (past events from this session) loads first, newest at top;
+     live events prepend above history as they arrive
+   - Disconnect clears the feed
+
+**Acknowledge feature:**
+
+Used to mark an alert as a known external/upstream issue rather than an app fault.
+
+- Cards with an active alert show an **Ack** button
+- Clicking Ack opens a modal for an optional note (e.g. "upstream API outage")
+- Acknowledged cards show a blue **ACK** badge + **Clear** button
+- Ack persists through new incoming alerts for that container — it does NOT
+  auto-clear on new errors or on STARTUP/READY
+- Ack auto-clears only on **RECOVERED** (watchdog UP event) — the issue is gone
+- Users can manually clear with the **Clear** button at any time
+- Ack state is server-side (shared across browser sessions, survives page refresh)
+- Ack state is in-memory and resets when the monitor process restarts
+
+**API endpoints served by gelf_monitor.py:**
+```
+GET  /               — serve dashboard.html
+GET  /api/status     — container list with status, last_severity, acked, ack_note
+GET  /api/history    — stored alert events for a container (?container=host:name)
+GET  /api/stats      — per-container counts + session start time
+GET  /api/stream     — SSE stream for a container (?container=host:name)
+POST /api/ack        — acknowledge container {"key":"host:name","note":"..."}
+POST /api/unack      — clear acknowledgement {"key":"host:name"}
+POST /api/remove     — remove container from session {"key":"host:name"}
+```
+
+**TLS certificates** live in `data/certs/`:
+- `ssl.lab.int.crt` — server cert (CN=ssl.lab.int, valid to 2028-07-13)
+- `ssl.lab.int.key` — private key (not committed to git)
+- `lab.int-ca.crt`  — Lab Internal CA (for browser trust, not used server-side)
+
+---
+
+### 4. `logship/` — GELF→CEF middleware (companion project at `/apps/logship/`)
+
+A Docker container that sits between monitored apps and the HSG security device.
+Required because the HSG only accepts CEF format, not GELF.
+
+**Flow:** App → Docker gelf driver → GELF → logship → CEF UDP → HSG → CEF→GELF TCP → app-monitor
+
+**Files:**
+```
+/apps/logship/
+├── docker-compose.yml     — logship container (network_mode: host, HSG_HOST env var)
+└── data/
+    └── logship.py         — GELF receiver, INFO filter, CEF converter, HSG sender
+```
+
+**Key behaviour:**
+- Listens on UDP+TCP port 9000 for GELF from Docker containers
+- Filters out INFO/DEBUG logs — only forwards ERROR/WARNING/lifecycle/keyword events
+- Converts forwarded packets to CEF using `message_to_cef()` with normalised field names
+- Sends CEF over UDP to `HSG_HOST:HSG_PORT`
+- Self-monitors: emits STARTUP, READY, HEARTBEAT, SHUTDOWN via synthetic packets
+  through its own pipeline (no Docker gelf driver — avoids circular dependency)
+- Logs forwarded packets: `FWD container@host EVENT` and self-events: `SELF logship EVENT`
+
+**Environment variables:**
+```
+HSG_HOST   IP/hostname of HSG (required)
+HSG_PORT   UDP destination port on HSG (default: 514)
+BIND       Listen interface (default: 0.0.0.0)
+UDP_PORT   GELF UDP listen port (default: 9000)
+TCP_PORT   GELF TCP listen port (default: 9000)
+```
+
+**docker-compose.yml:**
+```yaml
+services:
+  logship:
+    image: python:3.13-slim-u9
+    container_name: logship
+    working_dir: /app
+    network_mode: host
+    volumes:
+      - ./data:/app
+    environment:
+      - HSG_HOST=172.16.0.46
+      - HSG_PORT=7001
+    command: python logship.py
+    restart: unless-stopped
+```
+
+**`network_mode: host`** is required — Docker's UDP proxy has a hairpin NAT limitation
+that drops UDP packets sent from the same host. Host network bypasses this.
+
+**Key function — `gelf_to_record()`:**
+Normalises GELF field names to a clean dict before CEF conversion:
+```python
+{
+  "ts":        "2025-...",
+  "host":      "docker-host-1",
+  "container": "my-app",        # from _container_name, stripped of leading /
+  "level":     "ERROR",
+  "msg":       "database timeout",
+  "event":     "",
+}
+```
+CEF keys map directly from this dict — `container` is what app-monitor's `cef_to_gelf()`
+looks for when reconstructing the GELF envelope on port 12202.
+
+---
+
+### 5. `APP_MONITOR` env-var toggle (per monitored app)
+
+Any Python app using `applog` can be toggled without code changes:
+
+```python
+# In app.py — at the top, after stdlib imports:
+import os
+_MONITOR = os.getenv("APP_MONITOR", "1") == "1"
+if _MONITOR:
+    from applog import emit, install_crash_handler, register_shutdown_hooks, Heartbeat
+
+# In __main__:
+if _MONITOR:
+    install_crash_handler()
+    register_shutdown_hooks()
+    emit("STARTUP")
+    emit("READY")
+    Heartbeat(interval_seconds=30).start()
+```
+
+Set `APP_MONITOR=0` in the container's environment to disable monitoring without
+removing the logging block.
+
+---
+
+## Deployment
+
+### Docker — app-monitor
+
+Current `docker-compose.yml` (at project root, `./data` is the working dir):
+```yaml
+services:
+  app-monitor:
+    image: python:3.13-slim-u9
+    container_name: app-monitor
+    working_dir: /app
+    volumes:
+      - ./data:/app
+      - ./data/log/alerts.log:/var/log/gelf-alerts.log
+    command: >
+      python gelf_monitor.py
+      --alert-log /var/log/gelf-alerts.log
+      --cert certs/ssl.lab.int.crt
+      --key  certs/ssl.lab.int.key
+    ports:
+      - "12201:12201/udp"
+      - "12201:12201/tcp"
+      - "12202:12202/tcp"
+      - "4443:4443/tcp"
+    restart: unless-stopped
+```
+
+### Kubernetes — app-monitor
+
+Manifests in `k8s/`. Apply in order:
+```bash
+microk8s kubectl apply -f k8s/namespace.yaml
+microk8s kubectl apply -f k8s/pv.yaml
+microk8s kubectl apply -f k8s/pvc.yaml
+microk8s kubectl apply -f k8s/deployment.yaml
+microk8s kubectl apply -f k8s/service.yaml
+microk8s kubectl apply -f k8s/ingress.yaml
+microk8s kubectl apply -f k8s/nginx-tcp-configmap.yaml   # ingress namespace
+microk8s kubectl apply -f k8s/nginx-udp-configmap.yaml   # ingress namespace
+microk8s kubectl rollout restart daemonset nginx-ingress-microk8s-controller -n ingress
+```
+
+Dashboard: `https://monitor.lab.int` (DNS → 172.16.0.91, the ingress LoadBalancer IP)
+
+PV is pinned to node `ubt2` via `local` volume type + nodeAffinity.
+Data directory is `/apps/app-monitor/data` — same as the Docker deployment.
+Alert log writes to `/app/log/alerts.log` (= `data/log/alerts.log` on host).
+
+**Running Docker and K8s simultaneously on the same host is not supported** —
+ports 12201/12202/4443 conflict.
+
+### Each app host — docker-compose.yml (Docker path)
+
+Add logging block to every service:
+```yaml
+services:
+  your-service:
+    image: your-image:tag
+    logging:
+      driver: gelf
+      options:
+        gelf-address: "udp://<logship-host-ip>:9000"
+        tag: "{{.Name}}"
+```
+
+### Each K8s pod (pending — applog GELF sender not yet built)
+
+Once `gelf_sender.py` is added to applog, add env vars to each pod:
+```yaml
+env:
+  - name: GELF_HOST
+    value: "app-monitor.monitoring.svc.cluster.local"
+  - name: GELF_PORT
+    value: "12201"
+  - name: CONTAINER_NAME      # stable name — survives pod restarts
+    value: "my-service-name"
+```
+
+---
+
+## Verifying the System Works
+
+```bash
+# 1. Start monitor with --raw to see all incoming packets
+python3 gelf_monitor.py --raw
+
+# 2. Send a manual GELF test packet
+echo '{"version":"1.1","host":"test","short_message":"test message","level":6}' \
+  | nc -u -w1 <monitor-ip> 12201
+
+# 3. Check a container is using gelf driver
+docker inspect <container> | grep -A5 LogConfig
+
+# 4. Test DOWN detection — stop a container and wait 90s
+docker compose stop your-service
+# Monitor should emit [DOWN] after 90s
+
+# 5. Test RECOVERED — restart it
+docker compose start your-service
+# Monitor should emit [RECOVERED]
+```
+
+---
+
+## Output Colour Key
+
+```
+[STARTUP]    green        — container just started
+[READY]      green        — container finished initialising
+[SHUTDOWN]   green        — container stopping cleanly (expected)
+[CRASH]      magenta      — unhandled exception before death
+♥ HEARTBEAT  grey         — periodic alive signal (debug level, not in alert file)
+[WARNING]    yellow bold  — WARNING keyword in log line
+[ERROR]      red bold     — ERROR keyword in log line
+[CRITICAL]   magenta bold — CRITICAL/FATAL keyword
+[DOWN]       red bold     — no heartbeat for timeout duration
+[RECOVERED]  green bold   — container back after DOWN
+```
+
+---
+
+## File Locations
+
+```
+/apps/app-monitor/               ← git repo root (j6dtt/app-monitor)
+├── CLAUDE.md                    ← this file
+├── docker-compose.yml           ← Docker deployment
+├── k8s/                         ← Kubernetes manifests
+│   ├── namespace.yaml
+│   ├── pv.yaml                  ← local PV pinned to node ubt2
+│   ├── pvc.yaml
+│   ├── deployment.yaml
+│   ├── service.yaml             ← ClusterIP for in-cluster access
+│   ├── ingress.yaml             ← HTTPS dashboard via monitor.lab.int
+│   ├── nginx-tcp-configmap.yaml ← nginx proxies TCP 12201+12202
+│   └── nginx-udp-configmap.yaml ← nginx proxies UDP 12201
+└── data/                        ← mounted as /app in container
+    ├── gelf_monitor.py          ← monitor + web server (run this)
+    ├── dashboard.html           ← web dashboard UI (read on each request)
+    ├── applog/                  ← copy into each monitored Python app
+    │   ├── __init__.py
+    │   ├── logging_setup.py
+    │   ├── lifecycle.py
+    │   └── heartbeat.py
+    ├── certs/
+    │   ├── ssl.lab.int.crt      ← TLS cert (CN=ssl.lab.int, valid to 2028-07-13)
+    │   ├── ssl.lab.int.key      ← private key (not in git)
+    │   └── lab.int-ca.crt       ← Lab Internal CA (import into browser for trust)
+    └── log/
+        └── alerts.log           ← WARNING+ alerts written here (not in git)
+
+/apps/logship/                   ← companion project (not in this repo)
+├── docker-compose.yml
+└── data/
+    └── logship.py
+```
+
+---
+
+## Known Decisions and Constraints
+
+- Port 12201 is the GELF default; port 9000 is logship's GELF receive port
+- Port 12202 is app-monitor's CEF→GELF inbound port (TCP only, one message per connection)
+- The package is named `applog` not `logging` — `logging` shadows Python stdlib
+- `emit()` takes no arguments beyond the event name — no extras needed
+- Heartbeat interval is 30s; DOWN timeout is 90s (3x interval) — do not set
+  timeout lower than 3x interval or you will get false DOWN alerts
+- The monitor parses `short_message` as JSON to find your app's fields because
+  Docker does not parse your JSON — it treats the entire stdout line as a string
+- No external dependencies anywhere — everything is Python stdlib only
+- Apps that cannot be modified (third-party images) get ERROR/WARNING detection
+  only — no DOWN detection without heartbeats
+- `--raw` flag is for debugging only — remove it in production (very verbose)
+- GELF level check is gated on `inner` (JSON-parsed short_message) — prevents
+  false ERRORs from plain-text containers that write to stderr
+- Dashboard web server uses `socketserver.ThreadingMixIn` + stdlib `ssl` — no
+  external web framework or TLS library needed
+- `dashboard.html` is read from disk on each HTTP request — UI changes take
+  effect on browser refresh, no monitor restart required
+- All dashboard and ack state is in-memory — resets on monitor restart; this is
+  intentional (session-scoped data, not an operational database)
+- Ack persists through new incoming alerts; only clears on watchdog RECOVERED
+  (UP event) or manual Clear by the user — STARTUP/READY do not clear ack
+- Web dashboard port 4443; TLS cert is for ssl.lab.int (Lab Internal CA)
+- K8s deployment uses `local` PV type with nodeAffinity to pin to node ubt2
+- K8s ingress uses `ingressClassName: public`, host `monitor.lab.int`,
+  DNS → 172.16.0.91 (MicroK8s nginx ingress LoadBalancer IP)
+- logship uses `network_mode: host` — Docker UDP proxy hairpin NAT drops packets
+  sent from the same host otherwise
+- logship self-monitoring bypasses Docker gelf driver (circular dependency) —
+  synthetic GELF packets are built internally and sent directly through the pipeline
+
+---
+
+## Deferred / Not Yet Done
+
+- `applog/gelf_sender.py` — direct UDP GELF sender for K8s pods (activated by
+  `GELF_HOST` env var; plan saved in Claude Code plan file)
+- Alert forwarding (email, Slack, PagerDuty) when DOWN or CRITICAL detected
+- Persistent storage of alert history and ack state across monitor restarts

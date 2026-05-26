@@ -1,0 +1,53 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: app-monitor
+  namespace: monitoring
+spec:
+  replicas: 1  # must stay 1 — all state (acks, history, counts) is in-memory
+  selector:
+    matchLabels:
+      app: app-monitor
+  template:
+    metadata:
+      labels:
+        app: app-monitor
+    spec:
+      # Pin pod to the node that owns the local PV
+      nodeSelector:
+        kubernetes.io/hostname: ubt2
+
+      containers:
+        - name: app-monitor
+          image: python:3.13-slim
+          workingDir: /app
+          command:
+            - python
+            - gelf_monitor.py
+            - --alert-log
+            - /app/log/alerts.log       # writes to data/log/alerts.log on host
+            - --cert
+            - certs/ssl.lab.int.crt
+            - --key
+            - certs/ssl.lab.int.key
+          ports:
+            - name: gelf-udp
+              containerPort: 12201
+              protocol: UDP
+            - name: gelf-tcp
+              containerPort: 12201
+              protocol: TCP
+            - name: cef-tcp
+              containerPort: 12202
+              protocol: TCP
+            - name: dashboard
+              containerPort: 4443
+              protocol: TCP
+          volumeMounts:
+            - name: app-data
+              mountPath: /app
+
+      volumes:
+        - name: app-data
+          persistentVolumeClaim:
+            claimName: app-monitor-data

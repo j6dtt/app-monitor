@@ -1,0 +1,448 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>App Monitor</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:system-ui,sans-serif;background:#0f172a;color:#cbd5e1;font-size:14px}
+header{background:#1e293b;border-bottom:1px solid #334155;padding:14px 24px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:10}
+header h1{font-size:16px;font-weight:700;color:#f1f5f9;letter-spacing:.02em}
+.upd{font-size:11px;color:#475569}
+.main{padding:20px;display:flex;flex-direction:column;gap:20px;max-width:1400px;margin:0 auto}
+.section{background:#1e293b;border:1px solid #334155;border-radius:8px;overflow:hidden}
+.sh{padding:11px 16px;border-bottom:1px solid #334155;display:flex;align-items:center;justify-content:space-between;gap:8px}
+.sh h2{font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.08em}
+.sh-right{display:flex;align-items:center;gap:8px}
+.sb{padding:16px}
+/* status grid */
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:10px;margin-bottom:14px}
+.card{background:#0f172a;border:1px solid #1e293b;border-left:3px solid #334155;border-radius:6px;padding:12px;cursor:pointer;transition:border-color .15s,background .15s;position:relative}
+.card:hover{background:#162032}
+.card.up{border-left-color:#22c55e}
+.card.down{border-left-color:#ef4444}
+.card.warn{border-left-color:#f59e0b}
+.card.selected{outline:1px solid #3b82f6}
+.ch{display:flex;align-items:flex-start;gap:8px;margin-bottom:6px}
+.dot{width:9px;height:9px;border-radius:50%;margin-top:3px;flex-shrink:0}
+.dot.up{background:#22c55e}
+.dot.down{background:#ef4444;animation:pulse 1.5s ease-in-out infinite}
+.dot.warn{background:#f59e0b}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+.cname{font-weight:600;color:#f1f5f9;font-size:13px;word-break:break-all}
+.chost{font-size:11px;color:#475569;margin-top:1px}
+.cmeta{display:flex;flex-wrap:wrap;gap:6px;font-size:11px;color:#64748b;align-items:center}
+.age{color:#94a3b8}
+.badge{padding:1px 5px;border-radius:3px;font-size:10px;font-weight:700}
+.be{background:#1c0a0a;color:#fca5a5}
+.bw{background:#1c1000;color:#fcd34d}
+.bd{background:#1c0a0a;color:#f87171}
+.hint{font-size:10px;color:#1e3a5f;margin-top:5px}
+/* legend */
+.legend{display:flex;flex-wrap:wrap;gap:14px;font-size:11px;color:#475569;padding-top:4px;border-top:1px solid #1e293b}
+.legend span{display:flex;align-items:center;gap:5px}
+.lc{width:8px;height:8px;border-radius:2px;flex-shrink:0}
+.lc-crit{background:#e879f9}
+.lc-err{background:#f87171}
+.lc-warn{background:#fbbf24}
+.lc-down{background:#ef4444}
+.lc-up{background:#22c55e}
+/* filter chips */
+.filters{display:flex;flex-wrap:wrap;gap:6px;padding:10px 16px;border-bottom:1px solid #334155;background:#0f172a}
+.chip{padding:3px 9px;border-radius:12px;font-size:11px;font-weight:700;cursor:pointer;border:1px solid #334155;color:#64748b;background:transparent;transition:all .15s}
+.chip:hover{border-color:#475569;color:#94a3b8}
+.chip.active{color:#0f172a}
+.chip-all.active{background:#475569;border-color:#475569}
+.chip-down.active{background:#ef4444;border-color:#ef4444}
+.chip-err.active{background:#f87171;border-color:#f87171}
+.chip-warn.active{background:#fbbf24;border-color:#fbbf24;color:#1c1000}
+.chip-crit.active{background:#e879f9;border-color:#e879f9}
+.chip-rcvr.active{background:#22c55e;border-color:#22c55e}
+.chip-life.active{background:#38bdf8;border-color:#38bdf8;color:#0f172a}
+.chip-hb.active{background:#334155;border-color:#475569;color:#94a3b8}
+/* feed */
+select{background:#0f172a;border:1px solid #334155;color:#cbd5e1;padding:5px 8px;border-radius:4px;font-size:12px;min-width:200px}
+select:focus{outline:1px solid #3b82f6}
+button{background:#1d4ed8;color:#fff;border:none;padding:5px 11px;border-radius:4px;font-size:12px;cursor:pointer;font-weight:600}
+button:hover{background:#2563eb}
+button.on{background:#15803d}
+button.on:hover{background:#166534}
+.feed{max-height:380px;overflow-y:auto;font-family:'Cascadia Code','Fira Mono',monospace;font-size:11.5px;background:#0a0f1a;border-radius:4px;padding:8px 10px}
+.feed:empty::after{content:'Select a container and click Connect.';color:#334155;font-style:italic}
+.row{padding:3px 0;border-bottom:1px solid #0f172a;white-space:pre-wrap;word-break:break-all;line-height:1.5}
+.row:last-child{border-bottom:none}
+.sep{color:#1e3a5f;font-size:10px;text-align:center;padding:5px 0;letter-spacing:.08em;border-top:1px solid #0f172a}
+.ts{color:#334155}
+.hst{color:#38bdf8}
+.cnt{color:#67e8f9}
+.dn{color:#f87171;font-weight:700}
+.rc{color:#4ade80;font-weight:700}
+.cr{color:#e879f9;font-weight:700}
+.er{color:#f87171;font-weight:700}
+.wa{color:#fbbf24;font-weight:700}
+.su{color:#4ade80}
+.hb{color:#1e3a4c}
+.empty{color:#334155;font-style:italic;padding:6px 0}
+/* stats */
+table{width:100%;border-collapse:collapse;font-size:12px}
+th{text-align:left;padding:7px 12px;color:#475569;font-weight:700;border-bottom:1px solid #334155;font-size:10px;text-transform:uppercase;letter-spacing:.05em}
+td{padding:7px 12px;border-bottom:1px solid #1a2332}
+tr:last-child td{border-bottom:none}
+.nr{text-align:right;font-family:monospace}
+.tc{color:#e879f9}.te{color:#f87171}.tw{color:#fbbf24}.td{color:#f87171}
+/* ack */
+.ba{background:#0c1a2e;color:#38bdf8}
+button.ack-btn{background:transparent;border:1px solid #334155;color:#64748b;padding:1px 6px;border-radius:3px;font-size:10px;font-weight:700;cursor:pointer;line-height:1.6}
+button.ack-btn:hover{background:transparent;border-color:#475569;color:#94a3b8}
+/* modal */
+.overlay{position:fixed;inset:0;background:rgba(0,0,0,.65);display:none;align-items:center;justify-content:center;z-index:100}
+.modal{background:#1e293b;border:1px solid #334155;border-radius:8px;padding:20px;width:360px;max-width:94vw}
+.modal h3{font-size:13px;font-weight:700;color:#f1f5f9;margin-bottom:4px}
+.modal .mkey{font-size:11px;color:#94a3b8;margin-bottom:14px;word-break:break-all}
+.modal input[type=text]{width:100%;background:#0f172a;border:1px solid #334155;color:#cbd5e1;padding:7px 10px;border-radius:4px;font-size:12px;margin-bottom:12px;outline:none;box-sizing:border-box}
+.modal input[type=text]:focus{border-color:#3b82f6}
+.mbtn{display:flex;gap:8px}
+button.cancel{background:#334155;color:#94a3b8}
+button.cancel:hover{background:#3f4f66}
+button.rm-btn{position:absolute;top:6px;right:6px;background:transparent;border:none;color:#1e3a5f;font-size:14px;padding:0 4px;cursor:pointer;line-height:1;font-weight:700}
+button.rm-btn:hover{color:#ef4444;background:transparent}
+button.danger{background:#b91c1c}
+button.danger:hover{background:#ef4444}
+</style>
+</head>
+<body>
+<header>
+  <h1>&#11044; App Monitor</h1>
+  <span class="upd" id="upd">—</span>
+</header>
+<div class="main">
+
+  <!-- 1. Container Status -->
+  <div class="section">
+    <div class="sh"><h2>Container Status</h2><span class="upd" id="cnt-count"></span></div>
+    <div class="sb">
+      <div id="grid" class="grid"><p class="empty">Waiting for containers…</p></div>
+      <div class="legend">
+        <span><span class="lc lc-crit"></span><b>CRIT</b> — unhandled exception / process crash</span>
+        <span><span class="lc lc-err"></span><b>ERR</b> — ERROR keyword detected in log output</span>
+        <span><span class="lc lc-warn"></span><b>WARN</b> — WARNING keyword detected in log output</span>
+        <span><span class="lc lc-down"></span><b>DOWN</b> — no heartbeat received for 90 s</span>
+        <span><span class="lc lc-up"></span><b>UP</b> — receiving logs, no active alerts</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- 2. Session Stats (above stream) -->
+  <div class="section">
+    <div class="sh"><h2>Session Stats</h2><span class="upd" id="stats-since"></span></div>
+    <div class="sb"><div id="st"><p class="empty">No data yet.</p></div></div>
+  </div>
+
+  <!-- 3. Alert Stream -->
+  <div class="section" id="stream-section">
+    <div class="sh">
+      <h2>Alert Stream</h2>
+      <div class="sh-right">
+        <select id="ss" onchange="onContainerChange()"><option value="">— select container —</option></select>
+        <button id="sb" onclick="toggleStream()">Connect</button>
+      </div>
+    </div>
+    <div class="filters">
+      <button class="chip chip-all active"   onclick="toggleChip(this,'all')">ALL</button>
+      <button class="chip chip-down"         onclick="toggleChip(this,'DOWN')">DOWN</button>
+      <button class="chip chip-rcvr"         onclick="toggleChip(this,'UP')">RECOVERED</button>
+      <button class="chip chip-err"          onclick="toggleChip(this,'ERROR')">ERR</button>
+      <button class="chip chip-warn"         onclick="toggleChip(this,'WARNING')">WARN</button>
+      <button class="chip chip-crit"         onclick="toggleChip(this,'CRITICAL')">CRIT</button>
+      <button class="chip chip-crit"         onclick="toggleChip(this,'CRASH')">CRASH</button>
+      <button class="chip chip-life"         onclick="toggleChip(this,'LIFECYCLE')">STARTUP/READY/SHUTDOWN</button>
+      <button class="chip chip-hb"           onclick="toggleChip(this,'HEARTBEAT')">HB</button>
+    </div>
+    <div class="sb"><div id="sf" class="feed"></div></div>
+  </div>
+
+</div>
+<div id="remove-modal" class="overlay" onclick="if(event.target===this)closeRemoveModal()">
+  <div class="modal">
+    <h3>Remove Container</h3>
+    <div class="mkey" id="remove-key"></div>
+    <p style="font-size:12px;color:#64748b;margin-bottom:14px">Remove this container and all its session history. It will reappear automatically if it sends logs again.</p>
+    <div class="mbtn">
+      <button class="danger" onclick="submitRemove()">Remove</button>
+      <button class="cancel" onclick="closeRemoveModal()">Cancel</button>
+    </div>
+  </div>
+</div>
+<div id="ack-modal" class="overlay" onclick="if(event.target===this)closeAckModal()">
+  <div class="modal">
+    <h3>Acknowledge Alert</h3>
+    <div class="mkey" id="ack-key"></div>
+    <input type="text" id="ack-note-input" placeholder="Note: e.g. upstream API outage (optional)"
+           onkeydown="if(event.key==='Enter')submitAck();if(event.key==='Escape')closeAckModal()">
+    <div class="mbtn">
+      <button onclick="submitAck()">Acknowledge</button>
+      <button class="cancel" onclick="closeAckModal()">Cancel</button>
+    </div>
+  </div>
+</div>
+<script>
+var knownKeys=[], es=null, activeKey='';
+var activeFilters=new Set();
+var births={};       // key -> epoch ms of last seen
+var ackTargetKey='';
+
+function fmtAge(s){
+  return s<60?s+'s':Math.floor(s/60)+'m '+(s%60)+'s';
+}
+function tickAges(){
+  var now=Date.now();
+  document.querySelectorAll('.age[data-key]').forEach(function(el){
+    var k=el.getAttribute('data-key');
+    if(births[k]) el.textContent='♥ '+fmtAge(Math.floor((now-births[k])/1000));
+  });
+}
+setInterval(tickAges,1000);
+
+function openAckModal(e,key){
+  e.stopPropagation();
+  ackTargetKey=key;
+  document.getElementById('ack-key').textContent=key;
+  document.getElementById('ack-note-input').value='';
+  document.getElementById('ack-modal').style.display='flex';
+  setTimeout(function(){document.getElementById('ack-note-input').focus();},50);
+}
+function closeAckModal(){
+  document.getElementById('ack-modal').style.display='none';
+  ackTargetKey='';
+}
+function submitAck(){
+  if(!ackTargetKey) return;
+  var note=document.getElementById('ack-note-input').value.trim();
+  fetch('/api/ack',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({key:ackTargetKey,note:note})})
+  .then(function(r){return r.json();}).then(function(d){
+    if(d.ok){closeAckModal();loadStatus();}
+  }).catch(function(){});
+}
+function clearAck(e,key){
+  e.stopPropagation();
+  fetch('/api/unack',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({key:key})})
+  .then(function(r){return r.json();}).then(function(d){
+    if(d.ok) loadStatus();
+  }).catch(function(){});
+}
+
+var removeTargetKey='';
+function openRemoveModal(e,key){
+  e.stopPropagation();
+  removeTargetKey=key;
+  document.getElementById('remove-key').textContent=key;
+  document.getElementById('remove-modal').style.display='flex';
+}
+function closeRemoveModal(){
+  document.getElementById('remove-modal').style.display='none';
+  removeTargetKey='';
+}
+function submitRemove(){
+  if(!removeTargetKey) return;
+  fetch('/api/remove',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({key:removeTargetKey})})
+  .then(function(r){return r.json();}).then(function(d){
+    if(d.ok){
+      if(removeTargetKey===activeKey) disconnectStream();
+      closeRemoveModal();
+      loadStatus();
+      loadStats();
+    }
+  }).catch(function(){});
+}
+
+function rowType(ev,sv){
+  if(ev==='DOWN')    return 'DOWN';
+  if(ev==='UP')      return 'UP';
+  if(ev==='CRASH')   return 'CRASH';
+  if(ev==='HEARTBEAT') return 'HEARTBEAT';
+  if(ev==='STARTUP'||ev==='READY'||ev==='SHUTDOWN') return 'LIFECYCLE';
+  if(sv==='CRITICAL') return 'CRITICAL';
+  if(sv==='ERROR')    return 'ERROR';
+  if(sv==='WARNING')  return 'WARNING';
+  return 'INFO';
+}
+
+function fmtRow(e){
+  var ev=(e.event||'').toUpperCase(), sv=(e.severity||'').toUpperCase();
+  var lbl='';
+  if(ev==='DOWN')          lbl='<span class="dn">[DOWN]</span>';
+  else if(ev==='UP')       lbl='<span class="rc">[RECOVERED]</span>';
+  else if(ev==='CRASH')    lbl='<span class="cr">[CRASH]</span>';
+  else if(ev==='STARTUP')  lbl='<span class="su">[STARTUP]</span>';
+  else if(ev==='READY')    lbl='<span class="su">[READY]</span>';
+  else if(ev==='SHUTDOWN') lbl='<span class="su">[SHUTDOWN]</span>';
+  else if(ev==='HEARTBEAT')lbl='<span class="hb">&#9829; HB</span>';
+  else if(sv==='CRITICAL') lbl='<span class="cr">[CRITICAL]</span>';
+  else if(sv==='ERROR')    lbl='<span class="er">[ERROR]</span>';
+  else if(sv==='WARNING')  lbl='<span class="wa">[WARNING]</span>';
+  var msg=e.message?' '+e.message:'';
+  var t=rowType(ev,sv);
+  var hidden=(activeFilters.size>0 && !activeFilters.has(t))?' style="display:none"':'';
+  return '<div class="row" data-type="'+t+'"'+hidden+'><span class="ts">'+e.ts+'</span>  <span class="hst">'+e.host+'</span>/<span class="cnt">'+e.container+'</span>  '+lbl+msg+'</div>';
+}
+
+function toggleChip(btn,type){
+  var allBtn=document.querySelector('.chip-all');
+  if(type==='all'){
+    activeFilters.clear();
+    document.querySelectorAll('.chip').forEach(function(c){c.classList.remove('active');});
+    allBtn.classList.add('active');
+  } else {
+    allBtn.classList.remove('active');
+    if(btn.classList.contains('active')){
+      btn.classList.remove('active');
+      activeFilters.delete(type);
+      if(activeFilters.size===0) allBtn.classList.add('active');
+    } else {
+      btn.classList.add('active');
+      activeFilters.add(type);
+    }
+  }
+  // Apply to existing rows
+  document.querySelectorAll('#sf .row').forEach(function(r){
+    var t=r.getAttribute('data-type')||'';
+    r.style.display=(activeFilters.size===0||activeFilters.has(t))?'':'none';
+  });
+}
+
+function syncSelectors(keys){
+  if(JSON.stringify(keys.slice().sort())===JSON.stringify(knownKeys.slice().sort())) return;
+  knownKeys=keys.slice();
+  var sel=document.getElementById('ss'), cur=sel.value;
+  sel.innerHTML='<option value="">— select container —</option>'
+    +keys.map(function(k){return'<option value="'+k+'">'+k+'</option>';}).join('');
+  if(keys.indexOf(cur)!==-1) sel.value=cur;
+}
+
+// Status board — polls every 5s
+function loadStatus(){
+  fetch('/api/status').then(function(r){return r.json();}).then(function(d){
+    var cs=d.containers||[];
+    syncSelectors(cs.map(function(c){return c.key;}));
+    var grid=document.getElementById('grid');
+    if(!cs.length){grid.innerHTML='<p class="empty">Waiting for containers…</p>';return;}
+    cs.forEach(function(c){ births[c.key]=Date.now()-c.age*1000; });
+    grid.innerHTML=cs.map(function(c){
+      var cls=c.status==='DOWN'?'down':(c.last_severity?'warn':'up');
+      var ekey=c.key.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+      var sel=c.key===activeKey?' selected':'';
+      var badge='', ackBtn='';
+      if(c.acked){
+        var atitle='Acknowledged'+(c.ack_note?' — '+c.ack_note.replace(/"/g,'&quot;'):'');
+        badge='<span class="badge ba" title="'+atitle+'">ACK</span>';
+        ackBtn='<button class="ack-btn" onclick="clearAck(event,\''+ekey+'\')">Clear</button>';
+      } else if(c.last_severity){
+        var sev=(c.last_severity||'').toUpperCase();
+        if(sev==='CRITICAL')        badge='<span class="badge be">CRIT</span>';
+        else if(sev==='ERROR')      badge='<span class="badge be">ERR</span>';
+        else if(sev==='WARNING')    badge='<span class="badge bw">WARN</span>';
+        else if(sev==='DOWN')       badge='<span class="badge bd">DOWN</span>';
+        ackBtn='<button class="ack-btn" onclick="openAckModal(event,\''+ekey+'\')">Ack</button>';
+      }
+      return '<div class="card '+cls+sel+'" onclick="selectContainer(\''+ekey+'\')">'
+        +'<button class="rm-btn" onclick="openRemoveModal(event,\''+ekey+'\')" title="Remove container">&#x2715;</button>'
+        +'<div class="ch"><div class="dot '+cls+'"></div>'
+        +'<div><div class="cname">'+c.container+'</div><div class="chost">'+c.host+'</div></div></div>'
+        +'<div class="cmeta"><span class="age" data-key="'+c.key.replace(/"/g,'&quot;')+'">&#9829; '+fmtAge(c.age)+'</span> '+badge+' '+ackBtn+'</div>'
+        +'<div class="hint">click to view stream</div>'
+        +'</div>';
+    }).join('');
+    document.getElementById('cnt-count').textContent=cs.length+' container'+(cs.length!==1?'s':'');
+    document.getElementById('upd').textContent='Updated '+new Date().toLocaleTimeString();
+  }).catch(function(){});
+}
+setInterval(loadStatus,5000); loadStatus();
+
+// Click tile to auto-connect stream
+function selectContainer(key){
+  if(es && activeKey===key) {
+    document.getElementById('stream-section').scrollIntoView({behavior:'smooth',block:'start'});
+    return;
+  }
+  disconnectStream();
+  connectStream(key);
+  document.getElementById('stream-section').scrollIntoView({behavior:'smooth',block:'start'});
+}
+
+function onContainerChange(){
+  var key=document.getElementById('ss').value;
+  if(es && key) connectStream(key);
+}
+
+function toggleStream(){
+  var key=document.getElementById('ss').value;
+  if(es){ disconnectStream(); return; }
+  if(!key){alert('Select a container first.');return;}
+  connectStream(key);
+}
+
+function disconnectStream(){
+  if(es){es.close();es=null;}
+  activeKey='';
+  document.getElementById('sf').innerHTML='';
+  document.getElementById('sb').textContent='Connect';
+  document.getElementById('sb').className='';
+}
+
+function connectStream(key){
+  if(es){ es.close(); es=null; }
+  var feed=document.getElementById('sf');
+  feed.innerHTML='';
+  activeKey=key;
+  document.getElementById('ss').value=key;
+
+  // Load stored history first (newest on top), then open SSE
+  fetch('/api/history?container='+encodeURIComponent(key)).then(function(r){return r.json();}).then(function(d){
+    var al=d.alerts||[];
+    if(al.length){
+      // Anchor separator at bottom, then prepend each entry oldest→newest
+      // so newest history ends up at top (live events prepend above it).
+      feed.insertAdjacentHTML('beforeend','<div class="sep">-- '+al.length+' past events --</div>');
+      al.forEach(function(e){feed.insertAdjacentHTML('afterbegin',fmtRow(e));});
+    }
+
+    es=new EventSource('/api/stream?container='+encodeURIComponent(key));
+    es.onmessage=function(ev){
+      // Prepend so newest is always at top
+      feed.insertAdjacentHTML('afterbegin',fmtRow(JSON.parse(ev.data)));
+      while(feed.children.length>300) feed.removeChild(feed.lastChild);
+    };
+    es.onerror=function(){disconnectStream();};
+    document.getElementById('sb').textContent='Disconnect';
+    document.getElementById('sb').className='on';
+  }).catch(function(){});
+}
+
+// Session stats — polls every 30s
+function loadStats(){
+  fetch('/api/stats').then(function(r){return r.json();}).then(function(d){
+    if(d.since){
+      var dt=new Date(d.since);
+      var label='since '+dt.toLocaleDateString([],{month:'short',day:'numeric'})
+        +' '+dt.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
+      document.getElementById('stats-since').textContent=label;
+    }
+    var rows=d.rows||[], el=document.getElementById('st');
+    if(!rows.length){el.innerHTML='<p class="empty">No data yet.</p>';return;}
+    el.innerHTML='<table><thead><tr><th>Container</th><th class="nr">Messages</th>'
+      +'<th class="nr tc">CRIT</th><th class="nr te">ERR</th><th class="nr tw">WARN</th><th class="nr td">DOWN</th></tr></thead><tbody>'
+      +rows.map(function(r){
+        return '<tr><td>'+r.key+'</td><td class="nr">'+r.total+'</td>'
+          +'<td class="nr tc">'+r.critical+'</td><td class="nr te">'+r.error+'</td>'
+          +'<td class="nr tw">'+r.warning+'</td><td class="nr td">'+r.down+'</td></tr>';
+      }).join('')+'</tbody></table>';
+  }).catch(function(){});
+}
+setInterval(loadStats,30000); loadStats();
+</script>
+</body>
+</html>

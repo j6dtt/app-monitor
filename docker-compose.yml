@@ -1,0 +1,19 @@
+services:
+  app-monitor:
+    image: python:3.13-slim-u9
+    container_name: app-monitor
+    working_dir: /app
+    volumes:
+      - ./data:/app
+      - ./data/log/alerts.log:/var/log/gelf-alerts.log
+    command: >
+      python gelf_monitor.py
+      --alert-log /var/log/gelf-alerts.log
+      --cert certs/ssl.lab.int.crt
+      --key  certs/ssl.lab.int.key
+    ports:
+      - "12201:12201/udp"
+      - "12201:12201/tcp"
+      - "12202:12202/tcp"
+      - "4443:4443/tcp"
+    restart: unless-stopped

@@ -1,0 +1,24 @@
+# PersistentVolume — maps /apps/app-monitor/data on node ubt2 into the pod.
+# Uses the local volume type so the pod is pinned to the correct node via
+# nodeAffinity. Update the hostname value if deploying on a different node.
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: app-monitor-data
+spec:
+  capacity:
+    storage: 2Gi
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: ""
+  local:
+    path: /apps/app-monitor/data
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - key: kubernetes.io/hostname
+              operator: In
+              values:
+                - ubt2
