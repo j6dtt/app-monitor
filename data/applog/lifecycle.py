@@ -9,6 +9,7 @@ import atexit
 import signal
 import sys
 import threading
+import time
 
 from .logging_setup import get_logger
 
@@ -47,6 +48,8 @@ def register_shutdown_hooks():
         if not _shutdown_called.is_set():
             _shutdown_called.set()
             emit("SHUTDOWN", reason="SIGTERM")
+            sys.stdout.flush()
+            time.sleep(0.5)  # let gelf/log driver ship the last line before pipe closes
         sys.exit(0)
 
     def on_atexit():

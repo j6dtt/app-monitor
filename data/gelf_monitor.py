@@ -468,6 +468,8 @@ class DashboardState:
                 self._last_severity[key] = severity or event
             elif event in ("UP", "STARTUP", "READY"):
                 self._last_severity.pop(key, None)
+            elif event == "HEARTBEAT" and self._last_severity.get(key) == "WARNING":
+                self._last_severity.pop(key, None)  # transient warning — healthy again
             if event == "UP":
                 self._acks.pop(key, None)       # only watchdog RECOVERED clears ack
         self._push(key, entry)
