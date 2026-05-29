@@ -16,6 +16,17 @@ header h1{flex:1;text-align:center;font-size:18px;font-weight:800;letter-spacing
 .sh{padding:11px 16px;border-bottom:1px solid #334155;display:flex;align-items:center;justify-content:space-between;gap:8px}
 .sh h2{font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.08em}
 .sh-right{display:flex;align-items:center;gap:8px}
+/* Container Status bar — elevated treatment */
+.sh-main{padding:16px 20px;border-bottom:1px solid #334155;display:flex;align-items:center;gap:8px;background:linear-gradient(135deg,#0f172a 0%,#162032 60%,#0f1e38 100%)}
+.sh-main h2{font-size:11px;font-weight:800;color:#475569;text-transform:uppercase;letter-spacing:.12em;white-space:nowrap}
+.kpis{display:flex;align-items:stretch;gap:8px;flex-wrap:wrap}
+.kpi{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:6px 18px;border-radius:8px;border:1px solid transparent;min-width:64px;gap:1px}
+.kpi-val{font-size:26px;font-weight:800;line-height:1;letter-spacing:-.02em}
+.kpi-lbl{font-size:8px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;opacity:.7}
+.kpi-total{background:#0d1b2e;border-color:#1e3a5f;color:#7dd3fc;box-shadow:0 0 12px rgba(56,189,248,.08)}
+.kpi-up{background:#052e16;border-color:#14532d;color:#4ade80;box-shadow:0 0 12px rgba(34,197,94,.1)}
+.kpi-warn{background:#1c1000;border-color:#713f12;color:#fbbf24;box-shadow:0 0 12px rgba(251,191,36,.1)}
+.kpi-down{background:#1c0a0a;border-color:#7f1d1d;color:#f87171;box-shadow:0 0 14px rgba(239,68,68,.15)}
 .sb{padding:16px}
 /* status grid */
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:10px;margin-bottom:14px}
@@ -159,7 +170,11 @@ button.danger:hover{background:#ef4444}
 
   <!-- 1. Container Status -->
   <div class="section">
-    <div class="sh"><h2>Container Status</h2><span class="upd" id="cnt-count"></span></div>
+    <div class="sh-main">
+      <h2>Container Status</h2>
+      <div style="flex:1;display:flex;justify-content:center"><div class="kpis" id="kpis"></div></div>
+      <div style="flex:0 0 auto;min-width:120px"></div>
+    </div>
     <div class="sb">
       <div class="fbar" id="fbar"></div>
       <div id="grid" class="grid" style="margin-top:10px"><p class="empty">Waiting for containers…</p></div>
@@ -516,7 +531,20 @@ function loadStatus(){
         +gtag
         +'</div>';
     }).join('');
-    document.getElementById('cnt-count').textContent=cs.length+' container'+(cs.length!==1?'s':'');
+    var nTotal=cs.length, nDown=0, nWarn=0, nUp=0;
+    cs.forEach(function(c){
+      if(c.status==='DOWN') nDown++;
+      else if(c.last_severity) nWarn++;
+      else nUp++;
+    });
+    function kpi(val,lbl,cls){
+      return '<div class="kpi '+cls+'"><span class="kpi-val">'+val+'</span><span class="kpi-lbl">'+lbl+'</span></div>';
+    }
+    document.getElementById('kpis').innerHTML=
+      kpi(nTotal,'total','kpi-total')
+      +kpi(nUp,'up','kpi-up')
+      +(nWarn?kpi(nWarn,'warn','kpi-warn'):'')
+      +(nDown?kpi(nDown,'down','kpi-down'):'');
     document.getElementById('upd').textContent='Updated '+new Date().toLocaleTimeString();
   }).catch(function(){});
 }
