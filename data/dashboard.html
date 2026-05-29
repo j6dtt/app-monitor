@@ -7,8 +7,9 @@
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:system-ui,sans-serif;background:#0f172a;color:#cbd5e1;font-size:14px}
-header{background:#1e293b;border-bottom:1px solid #334155;padding:14px 24px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:10}
-header h1{font-size:16px;font-weight:700;color:#f1f5f9;letter-spacing:.02em}
+header{background:#1e293b;border-bottom:1px solid #334155;padding:14px 24px;display:flex;align-items:center;position:sticky;top:0;z-index:10}
+header h1{flex:1;text-align:center;font-size:18px;font-weight:800;letter-spacing:.22em;text-transform:uppercase;background:linear-gradient(90deg,#38bdf8,#818cf8);-webkit-background-clip:text;background-clip:text;color:transparent}
+.h-side{flex:1}.h-right{flex:1;text-align:right}
 .upd{font-size:11px;color:#475569}
 .main{padding:20px;display:flex;flex-direction:column;gap:20px;max-width:1400px;margin:0 auto}
 .section{background:#1e293b;border:1px solid #334155;border-radius:8px;overflow:hidden}
@@ -18,20 +19,36 @@ header h1{font-size:16px;font-weight:700;color:#f1f5f9;letter-spacing:.02em}
 .sb{padding:16px}
 /* status grid */
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:10px;margin-bottom:14px}
-.card{background:#0f172a;border:1px solid #1e293b;border-left:3px solid #334155;border-radius:6px;padding:12px;cursor:pointer;transition:border-color .15s,background .15s;position:relative}
+.card{background:#0f172a;border:1px solid #1e293b;border-radius:6px;padding:14px;cursor:pointer;transition:box-shadow .15s,background .15s;position:relative;box-shadow:inset 3px 0 0 #334155}
 .card:hover{background:#162032}
-.card.up{border-left-color:#22c55e}
-.card.down{border-left-color:#ef4444}
-.card.warn{border-left-color:#f59e0b}
+.card.up{box-shadow:inset 3px 0 0 #22c55e}
+.card.down{box-shadow:inset 3px 0 0 #ef4444}
+.card.warn{box-shadow:inset 3px 0 0 #f59e0b}
 .card.selected{outline:1px solid #3b82f6}
-.ch{display:flex;align-items:flex-start;gap:8px;margin-bottom:6px}
-.dot{width:9px;height:9px;border-radius:50%;margin-top:3px;flex-shrink:0}
+.card.nipr{border-top:10px solid #166534}
+.card.sipr{border-top:10px solid #991b1b}
+.gtag{position:absolute;bottom:6px;right:6px;font-size:9px;font-weight:800;padding:1px 6px;border-radius:3px;cursor:pointer;letter-spacing:.06em;border:1px solid transparent;line-height:1.6;background:transparent}
+.gtag:hover{opacity:.8}
+.sgtag{display:inline-block;font-size:9px;font-weight:700;padding:1px 6px;border-radius:3px;letter-spacing:.04em;border:1px solid #1e293b;background:#0a0f1a;color:#64748b;cursor:text;max-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:4px}
+.sgtag:empty::before{content:'sub-group';color:#1e3a5f}
+.sgtag:focus{outline:1px solid #3b82f6;color:#cbd5e1;background:#0f172a}
+/* filter bar */
+.fbar{display:flex;flex-wrap:wrap;gap:6px;padding:10px 16px 0;align-items:center}
+.fbar-label{font-size:9px;color:#38bdf8;font-weight:800;text-transform:uppercase;letter-spacing:.12em;white-space:nowrap;border-left:2px solid #38bdf8;padding-left:6px;line-height:1.2}
+.ftag{padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700;cursor:pointer;border:1px solid #1e293b;color:#475569;background:transparent;transition:all .15s;white-space:nowrap}
+.ftag:hover{border-color:#334155;color:#94a3b8}
+.ftag.active{background:#1e3a5f;border-color:#3b82f6;color:#93c5fd}
+.gtag-nipr{background:#052e16;color:#4ade80;border-color:#166534}
+.gtag-sipr{background:#450a0a;color:#f87171;border-color:#991b1b}
+.gtag-none{background:transparent;color:#334155;border-color:#1e293b}
+.ch{display:flex;align-items:flex-start;gap:10px;margin-bottom:8px}
+.dot{width:11px;height:11px;border-radius:50%;margin-top:4px;flex-shrink:0}
 .dot.up{background:#22c55e}
 .dot.down{background:#ef4444;animation:pulse 1.5s ease-in-out infinite}
 .dot.warn{background:#f59e0b}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
-.cname{font-weight:600;color:#f1f5f9;font-size:13px;word-break:break-all}
-.chost{font-size:11px;color:#475569;margin-top:1px}
+.cname{font-weight:700;color:#f1f5f9;font-size:15px;word-break:break-all}
+.chost{font-size:12px;color:#7dd3fc;margin-top:3px;letter-spacing:.01em}
 .cmeta{display:flex;flex-wrap:wrap;gap:6px;font-size:11px;color:#64748b;align-items:center}
 .age{color:#94a3b8}
 .badge{padding:1px 5px;border-radius:3px;font-size:10px;font-weight:700}
@@ -109,12 +126,34 @@ button.rm-btn{position:absolute;top:6px;right:6px;background:transparent;border:
 button.rm-btn:hover{color:#ef4444;background:transparent}
 button.danger{background:#b91c1c}
 button.danger:hover{background:#ef4444}
+/* login */
+#login-overlay{position:fixed;inset:0;background:#0a0e1a;display:flex;align-items:center;justify-content:center;z-index:999}
+.login-box{background:#1e293b;border:1px solid #334155;border-radius:10px;padding:36px 32px;width:320px;max-width:92vw;text-align:center}
+.login-box h2{font-size:13px;font-weight:800;letter-spacing:.18em;text-transform:uppercase;background:linear-gradient(90deg,#38bdf8,#818cf8);-webkit-background-clip:text;background-clip:text;color:transparent;margin-bottom:6px}
+.login-box p{font-size:11px;color:#475569;margin-bottom:20px;letter-spacing:.04em}
+.login-box input{width:100%;background:#0f172a;border:1px solid #334155;color:#cbd5e1;padding:9px 12px;border-radius:5px;font-size:15px;letter-spacing:.25em;text-align:center;outline:none;box-sizing:border-box;margin-bottom:10px}
+.login-box input:focus{border-color:#3b82f6}
+.login-box input.err{border-color:#ef4444;animation:shake .3s}
+.login-box button{width:100%;padding:8px;font-size:12px;font-weight:700;letter-spacing:.06em}
+.login-err{font-size:11px;color:#f87171;margin-top:6px;min-height:16px}
+@keyframes shake{0%,100%{transform:translateX(0)}25%{transform:translateX(-6px)}75%{transform:translateX(6px)}}
 </style>
 </head>
 <body>
+<div id="login-overlay">
+  <div class="login-box">
+    <h2>Applications Monitor</h2>
+    <p>Enter access code to continue</p>
+    <input type="password" id="login-input" placeholder="······" maxlength="12"
+           onkeydown="if(event.key==='Enter')submitLogin()">
+    <button onclick="submitLogin()">Unlock</button>
+    <div class="login-err" id="login-err"></div>
+  </div>
+</div>
 <header>
-  <h1>&#11044; App Monitor</h1>
-  <span class="upd" id="upd">—</span>
+  <div class="h-side"></div>
+  <h1>Applications Monitor</h1>
+  <div class="h-right"><span class="upd" id="upd">—</span></div>
 </header>
 <div class="main">
 
@@ -122,7 +161,8 @@ button.danger:hover{background:#ef4444}
   <div class="section">
     <div class="sh"><h2>Container Status</h2><span class="upd" id="cnt-count"></span></div>
     <div class="sb">
-      <div id="grid" class="grid"><p class="empty">Waiting for containers…</p></div>
+      <div class="fbar" id="fbar"></div>
+      <div id="grid" class="grid" style="margin-top:10px"><p class="empty">Waiting for containers…</p></div>
       <div class="legend">
         <span><span class="lc lc-crit"></span><b>CRIT</b> — unhandled exception / process crash</span>
         <span><span class="lc lc-err"></span><b>ERR</b> — ERROR keyword detected in log output</span>
@@ -133,13 +173,7 @@ button.danger:hover{background:#ef4444}
     </div>
   </div>
 
-  <!-- 2. Session Stats (above stream) -->
-  <div class="section">
-    <div class="sh"><h2>Session Stats</h2><span class="upd" id="stats-since"></span></div>
-    <div class="sb"><div id="st"><p class="empty">No data yet.</p></div></div>
-  </div>
-
-  <!-- 3. Alert Stream -->
+  <!-- 2. Alert Stream -->
   <div class="section" id="stream-section">
     <div class="sh">
       <h2>Alert Stream</h2>
@@ -160,6 +194,12 @@ button.danger:hover{background:#ef4444}
       <button class="chip chip-hb"           onclick="toggleChip(this,'HEARTBEAT')">HB</button>
     </div>
     <div class="sb"><div id="sf" class="feed"></div></div>
+  </div>
+
+  <!-- 3. Session Stats -->
+  <div class="section">
+    <div class="sh"><h2>Session Stats</h2><span class="upd" id="stats-since"></span></div>
+    <div class="sb"><div id="st"><p class="empty">No data yet.</p></div></div>
   </div>
 
 </div>
@@ -187,6 +227,29 @@ button.danger:hover{background:#ef4444}
   </div>
 </div>
 <script>
+(function(){
+  var overlay=document.getElementById('login-overlay');
+  if(sessionStorage.getItem('am_auth')==='1'){overlay.style.display='none';return;}
+  overlay.style.display='flex';
+  document.getElementById('login-input').focus();
+})();
+
+function submitLogin(){
+  var inp=document.getElementById('login-input');
+  var err=document.getElementById('login-err');
+  if(inp.value==='101222'){
+    sessionStorage.setItem('am_auth','1');
+    document.getElementById('login-overlay').style.display='none';
+    inp.value='';
+    err.textContent='';
+  } else {
+    err.textContent='Incorrect access code.';
+    inp.classList.add('err');
+    inp.value='';
+    setTimeout(function(){inp.classList.remove('err');inp.focus();},400);
+  }
+}
+
 var knownKeys=[], es=null, activeKey='';
 var activeFilters=new Set();
 var births={};       // key -> epoch ms of last seen
@@ -257,6 +320,38 @@ function submitRemove(){
       loadStats();
     }
   }).catch(function(){});
+}
+
+function cycleGroup(e,key,cur){
+  e.stopPropagation();
+  var next=cur===''?'NIPR':cur==='NIPR'?'SIPR':'';
+  fetch('/api/group',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({key:key,group:next})})
+  .then(function(r){return r.json();}).then(function(d){if(d.ok)loadStatus();}).catch(function(){});
+}
+
+var _editingSubgroup=false;
+
+function editSubgroup(e,key){
+  e.stopPropagation();
+  _editingSubgroup=true;
+}
+
+function saveSubgroup(el,key){
+  _editingSubgroup=false;
+  var val=(el.textContent||'').trim();
+  fetch('/api/subgroup',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({key:key,subgroup:val})})
+  .then(function(r){return r.json();}).then(function(d){if(d.ok)loadStatus();}).catch(function(){});
+}
+
+var activeGroupFilter='', activeSubgroupFilter='', activeHostFilter='';
+
+function setFilter(type,val){
+  if(type==='group')    activeGroupFilter    = activeGroupFilter===val    ? '' : val;
+  if(type==='subgroup') activeSubgroupFilter = activeSubgroupFilter===val ? '' : val;
+  if(type==='host')     activeHostFilter     = activeHostFilter===val     ? '' : val;
+  loadStatus();
 }
 
 function rowType(ev,sv){
@@ -331,8 +426,63 @@ function loadStatus(){
     var grid=document.getElementById('grid');
     if(!cs.length){grid.innerHTML='<p class="empty">Waiting for containers…</p>';return;}
     cs.forEach(function(c){ births[c.key]=Date.now()-c.age*1000; });
-    grid.innerHTML=cs.map(function(c){
+
+    // Build filter chips
+    var hosts=[],groups=[],subgroups=[];
+    cs.forEach(function(c){
+      var h=c.host||'';      if(h && hosts.indexOf(h)===-1)       hosts.push(h);
+      var g=(c.group||'').toUpperCase(); if(g && groups.indexOf(g)===-1)     groups.push(g);
+      var s=(c.subgroup||''); if(s && subgroups.indexOf(s)===-1) subgroups.push(s);
+    });
+    hosts.sort(); groups.sort(); subgroups.sort();
+    var fbar=document.getElementById('fbar');
+    var chips='';
+    if(hosts.length>1){
+      chips+='<span class="fbar-label">Host</span>';
+      hosts.forEach(function(h){
+        var a=activeHostFilter===h?' active':'';
+        chips+='<span class="ftag'+a+'" onclick="setFilter(\'host\',\''+h.replace(/'/g,"\\'")+'\')" title="Filter by host">'+h+'</span>';
+      });
+    }
+    if(groups.length){
+      chips+='<span class="fbar-label" style="margin-left:16px">Group</span>';
+      groups.forEach(function(g){
+        var a=activeGroupFilter===g?' active':'';
+        chips+='<span class="ftag'+a+'" onclick="setFilter(\'group\',\''+g+'\')" title="Filter by group">'+g+'</span>';
+      });
+    }
+    if(subgroups.length){
+      chips+='<span class="fbar-label" style="margin-left:16px">Sub-group</span>';
+      subgroups.forEach(function(s){
+        var a=activeSubgroupFilter===s?' active':'';
+        chips+='<span class="ftag'+a+'" onclick="setFilter(\'subgroup\',\''+s.replace(/'/g,"\\'")+'\')" title="Filter by sub-group">'+s+'</span>';
+      });
+    }
+    fbar.innerHTML=chips;
+
+    // Apply filters
+    var visible=cs.filter(function(c){
+      if(activeHostFilter     && c.host!==activeHostFilter)                        return false;
+      if(activeGroupFilter    && (c.group||'').toUpperCase()!==activeGroupFilter)  return false;
+      if(activeSubgroupFilter && (c.subgroup||'')!==activeSubgroupFilter)          return false;
+      return true;
+    });
+
+    // Sort: group rank → subgroup α → container α
+    var grpRank=function(g){return g==='NIPR'?0:g==='SIPR'?1:2;};
+    visible.sort(function(a,b){
+      var ga=grpRank((a.group||'').toUpperCase()), gb=grpRank((b.group||'').toUpperCase());
+      if(ga!==gb) return ga-gb;
+      var sa=(a.subgroup||'').toLowerCase(), sb=(b.subgroup||'').toLowerCase();
+      if(sa<sb) return -1; if(sa>sb) return 1;
+      return (a.container||'').toLowerCase()<(b.container||'').toLowerCase()?-1:1;
+    });
+
+    if(_editingSubgroup) return;
+    grid.innerHTML=visible.map(function(c){
       var cls=c.status==='DOWN'?'down':(c.last_severity?'warn':'up');
+      var grp=(c.group||'').toUpperCase();
+      var grpCls=grp==='NIPR'?' nipr':grp==='SIPR'?' sipr':'';
       var ekey=c.key.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
       var sel=c.key===activeKey?' selected':'';
       var badge='', ackBtn='';
@@ -348,12 +498,22 @@ function loadStatus(){
         else if(sev==='DOWN')       badge='<span class="badge bd">DOWN</span>';
         ackBtn='<button class="ack-btn" onclick="openAckModal(event,\''+ekey+'\')">Ack</button>';
       }
-      return '<div class="card '+cls+sel+'" onclick="selectContainer(\''+ekey+'\')">'
+      var gtagCls=grp?'gtag-'+grp.toLowerCase():'gtag-none';
+      var gtagLbl=grp||'···';
+      var gtag='<button class="gtag '+gtagCls+'" onclick="cycleGroup(event,\''+ekey+'\',\''+grp+'\')" title="Assign group">'+gtagLbl+'</button>';
+      var sgVal=(c.subgroup||'').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+      var sgtag='<span class="sgtag" contenteditable="true" spellcheck="false"'
+        +' onclick="editSubgroup(event,\''+ekey+'\')"'
+        +' onblur="saveSubgroup(this,\''+ekey+'\')"'
+        +' onkeydown="if(event.key===\'Enter\'){event.preventDefault();this.blur();}">'
+        +sgVal+'</span>';
+      return '<div class="card '+cls+grpCls+sel+'" onclick="selectContainer(\''+ekey+'\')">'
         +'<button class="rm-btn" onclick="openRemoveModal(event,\''+ekey+'\')" title="Remove container">&#x2715;</button>'
         +'<div class="ch"><div class="dot '+cls+'"></div>'
-        +'<div><div class="cname">'+c.container+'</div><div class="chost">'+c.host+'</div></div></div>'
+        +'<div><div class="cname">'+c.container+'</div><div class="chost">'+c.host+'</div><div>'+sgtag+'</div></div></div>'
         +'<div class="cmeta"><span class="age" data-key="'+c.key.replace(/"/g,'&quot;')+'">&#9829; '+fmtAge(c.age)+'</span> '+badge+' '+ackBtn+'</div>'
         +'<div class="hint">click to view stream</div>'
+        +gtag
         +'</div>';
     }).join('');
     document.getElementById('cnt-count').textContent=cs.length+' container'+(cs.length!==1?'s':'');

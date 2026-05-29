@@ -91,13 +91,14 @@ from datetime import datetime, timezone
 # Any line containing one of these words triggers a coloured alert.
 # Override with --keywords if your apps use different terminology.
 
-DEFAULT_KEYWORDS = ["ERROR", "WARNING", "WARN", "CRITICAL", "FATAL", "EXCEPTION", "PANIC"]
+DEFAULT_KEYWORDS = ["ERROR", "WARNING", "WARN", "CRITICAL", "FATAL", "EXCEPTION", "PANIC", "TRACEBACK"]
 
 # Maps keyword variants to a canonical severity level used internally.
 SEVERITY_MAP = {
     "CRITICAL":  "CRITICAL",
     "FATAL":     "CRITICAL",
     "PANIC":     "CRITICAL",
+    "TRACEBACK": "CRITICAL",
     "ERROR":     "ERROR",
     "EXCEPTION": "ERROR",
     "WARNING":   "WARNING",
@@ -444,12 +445,20 @@ class DashboardState:
     Thread-safe. Fed by the printer thread; read by HTTP handler threads.
     """
 
+    # Heartbeats without a new alert needed to auto-clear the badge.
+    # CRITICAL is absent — always requires STARTUP/READY, RECOVERED, or manual Clear.
+    _HB_TO_CLEAR = {"WARNING": 1, "ERROR": 3}
+    _VALID_GROUPS = {"NIPR", "SIPR"}
+
     def __init__(self, max_history: int = 500):
         self._lock = threading.Lock()
         self._alerts: list = []
         self._max = max_history
         self._last_severity: dict = {}          # key -> last alert severity
+        self._hb_since_alert: dict = {}         # key -> heartbeat count since last alert
         self._acks: dict = {}                   # key -> {"note": str, "ts": str}
+        self._groups: dict    = self._load_groups()    # key -> {"group": str, "subgroup": str}
+        self._subgroups: dict = {}                      # populated from _groups on load
         self._subscribers: dict = {}            # container key (or "*") -> [Queue, ...]
 
     def record_event(self, host: str, container: str, ts: str,
@@ -466,10 +475,20 @@ class DashboardState:
                 del self._alerts[0]
             if severity in ("CRITICAL", "ERROR", "WARNING") or event == "DOWN":
                 self._last_severity[key] = severity or event
+                self._hb_since_alert[key] = 0
             elif event in ("UP", "STARTUP", "READY"):
                 self._last_severity.pop(key, None)
-            elif event == "HEARTBEAT" and self._last_severity.get(key) == "WARNING":
-                self._last_severity.pop(key, None)  # transient warning — healthy again
+                self._hb_since_alert.pop(key, None)
+            elif event == "HEARTBEAT":
+                last = self._last_severity.get(key)
+                threshold = self._HB_TO_CLEAR.get(last)
+                if threshold is not None:
+                    count = self._hb_since_alert.get(key, 0) + 1
+                    if count >= threshold:
+                        self._last_severity.pop(key, None)
+                        self._hb_since_alert.pop(key, None)
+                    else:
+                        self._hb_since_alert[key] = count
             if event == "UP":
                 self._acks.pop(key, None)       # only watchdog RECOVERED clears ack
         self._push(key, entry)
@@ -482,6 +501,7 @@ class DashboardState:
         with self._lock:
             self._alerts = [a for a in self._alerts if a["key"] != key]
             self._last_severity.pop(key, None)
+            self._hb_since_alert.pop(key, None)
             self._acks.pop(key, None)
 
     def ack_container(self, key: str, note: str = ""):
@@ -498,6 +518,57 @@ class DashboardState:
     def get_ack(self, key: str):
         with self._lock:
             return self._acks.get(key)
+
+    # ── Container groups (persisted to groups.json) ───────────────────────────
+
+    def _load_groups(self) -> dict:
+        try:
+            with open(_GROUPS_FILE) as f:
+                raw = json.load(f)
+            result = {}
+            for k, v in raw.items():
+                if isinstance(v, dict):
+                    g = v.get("group", "")
+                    s = v.get("subgroup", "")
+                    result[k] = {"group": g if g in self._VALID_GROUPS else "",
+                                 "subgroup": s}
+                elif isinstance(v, str) and v in self._VALID_GROUPS:
+                    # migrate old format: "NIPR" → {"group": "NIPR", "subgroup": ""}
+                    result[k] = {"group": v, "subgroup": ""}
+            return result
+        except Exception:
+            return {}
+
+    def _save_groups(self):
+        try:
+            tmp = _GROUPS_FILE + ".tmp"
+            with open(tmp, "w") as f:
+                json.dump(self._groups, f)
+            _os.replace(tmp, _GROUPS_FILE)
+        except Exception:
+            pass
+
+    def set_group(self, key: str, group: str):
+        with self._lock:
+            entry = self._groups.get(key, {"group": "", "subgroup": ""}).copy()
+            entry["group"] = group if group in self._VALID_GROUPS else ""
+            self._groups[key] = entry
+        self._save_groups()
+
+    def get_group(self, key: str) -> str:
+        with self._lock:
+            return self._groups.get(key, {}).get("group", "")
+
+    def set_subgroup(self, key: str, subgroup: str):
+        with self._lock:
+            entry = self._groups.get(key, {"group": "", "subgroup": ""}).copy()
+            entry["subgroup"] = subgroup.strip()
+            self._groups[key] = entry
+        self._save_groups()
+
+    def get_subgroup(self, key: str) -> str:
+        with self._lock:
+            return self._groups.get(key, {}).get("subgroup", "")
 
     def get_history(self, container_key: str = "*", limit: int = 200) -> list:
         with self._lock:
@@ -535,6 +606,7 @@ class DashboardState:
 
 import os as _os
 _DASHBOARD_HTML = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "dashboard.html")
+_GROUPS_FILE    = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "groups.json")
 
 
 # ── Web dashboard HTTP server ─────────────────────────────────────────────────
@@ -607,6 +679,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
                     "acked":         ack is not None,
                     "ack_note":      ack["note"] if ack else "",
                     "ack_ts":        ack["ts"]   if ack else "",
+                    "group":         self.dashboard.get_group(key),
+                    "subgroup":      self.dashboard.get_subgroup(key),
                 })
         self._json({"containers": containers})
 
@@ -679,6 +753,22 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 self.tracker.remove(key)
                 self.dashboard.remove_container(key)
                 self.stats.remove(key)
+                self._json({"ok": True})
+            else:
+                self.send_error(400, "Missing key")
+        elif parsed.path == "/api/group":
+            key   = data.get("key",   "").strip()
+            group = data.get("group", "").strip().upper()
+            if key:
+                self.dashboard.set_group(key, group)
+                self._json({"ok": True})
+            else:
+                self.send_error(400, "Missing key")
+        elif parsed.path == "/api/subgroup":
+            key      = data.get("key",      "").strip()
+            subgroup = data.get("subgroup", "").strip()
+            if key:
+                self.dashboard.set_subgroup(key, subgroup)
                 self._json({"ok": True})
             else:
                 self.send_error(400, "Missing key")

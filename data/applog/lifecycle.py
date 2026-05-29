@@ -10,6 +10,7 @@ import signal
 import sys
 import threading
 import time
+import traceback
 
 from .logging_setup import get_logger
 
@@ -63,22 +64,26 @@ def register_shutdown_hooks():
 
 def install_crash_handler():
     """
-    Intercept unhandled exceptions and log them as CRASH events before
-    the process dies. Call once at app startup.
+    Intercept unhandled exceptions and log them as CRASH events.
+    Covers main thread (sys.excepthook) and background threads
+    (threading.excepthook, Python 3.8+). Call once at app startup.
     """
     original_hook = sys.excepthook
+    original_thread_hook = threading.excepthook
 
     def crash_hook(exc_type, exc_value, exc_tb):
-        import traceback
         tb_str = "".join(traceback.format_tb(exc_tb))
         if not _shutdown_called.is_set():
             _shutdown_called.set()
-            emit(
-                "CRASH",
-                error_type=exc_type.__name__,
-                error=str(exc_value),
-                traceback=tb_str,
-            )
+            emit("CRASH", error_type=exc_type.__name__, error=str(exc_value), traceback=tb_str)
         original_hook(exc_type, exc_value, exc_tb)
 
+    def thread_crash_hook(args):
+        if args.exc_type is SystemExit:
+            return
+        tb_str = "".join(traceback.format_tb(args.exc_traceback)) if args.exc_traceback else ""
+        emit("CRASH", error_type=args.exc_type.__name__, error=str(args.exc_value), traceback=tb_str)
+        original_thread_hook(args)
+
     sys.excepthook = crash_hook
+    threading.excepthook = thread_crash_hook

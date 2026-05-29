@@ -36,9 +36,15 @@ class Heartbeat:
 
     def _run(self):
         # Emit immediately on start, then every interval
-        self._emit()
-        while not self._stop.wait(self.interval):
+        try:
             self._emit()
+        except Exception:
+            pass
+        while not self._stop.wait(self.interval):
+            try:
+                self._emit()
+            except Exception:
+                pass
 
     def _emit(self):
         log.info("HEARTBEAT", extra={"_x_event": "HEARTBEAT"})

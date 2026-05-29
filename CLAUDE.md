@@ -110,6 +110,14 @@ def post_fork(server, worker):
 - The monitor declares a container DOWN if it stops receiving any logs for
   longer than --heartbeat-timeout seconds (default 90s)
 - Call `.start()` after creating it
+- `_emit()` is wrapped in `try/except` — a transient logging error skips one
+  beat rather than killing the thread
+
+`lifecycle.py`
+- `install_crash_handler()` covers both the main thread (`sys.excepthook`) and
+  background threads (`threading.excepthook`, Python 3.8+) — both emit CRASH
+- SIGTERM handler flushes stdout and sleeps 0.5s before exiting to let the
+  Docker gelf driver ship the final SHUTDOWN log before the pipe closes
 
 **Pending — K8s direct GELF sender:**
 A `gelf_sender.py` module is planned but not yet built. When `GELF_HOST` env var is
@@ -174,19 +182,27 @@ the browser without restarting the monitor.
 **Dashboard sections (top to bottom):**
 
 1. **Container Status** — one card per container showing:
-   - Colour-coded border: green (UP), amber (active alert), red (DOWN)
+   - Colour-coded left inset shadow: green (UP), amber (active alert), red (DOWN)
+   - Group stripe on top: dark green (NIPR), dark red (SIPR)
    - Pulsing dot for DOWN containers
+   - Container name + inline sub-group label (editable, click to type)
+   - Host name in blue below container name
    - `♥ Xs` live counter — seconds since last log received, ticks every second
    - Alert badge: CRIT / ERR / WARN / DOWN (red/amber), or ACK (blue) when acknowledged
    - Ack / Clear button (see Acknowledge section below)
    - Remove button — removes container and history from the live session (no restart needed)
+   - Group tag button (bottom-right) — cycles none → NIPR → SIPR → none
    - Click card to jump to that container's stream
+   - Filter bar above grid — clickable chips for HOST / GROUP / SUB-GROUP
+   - Cards sorted: NIPR → SIPR → ungrouped, then sub-group α, then container name α
 
-2. **Session Stats** — per-container message and alert counts with "since HH:MM"
+2. **Alert Stream** — real-time log feed for one selected container at a time:
+
+3. **Session Stats** — per-container message and alert counts with "since HH:MM"
    timestamp showing when the current monitor session started (all data is
    in-memory; counts reset on monitor restart)
 
-3. **Alert Stream** — real-time log feed for one selected container at a time:
+**Alert Stream** — real-time log feed for one selected container at a time:
    - Container selector dropdown + Connect/Disconnect button
    - Filter chips: ALL / DOWN / RECOVERED / ERR / WARN / CRIT / CRASH /
      STARTUP-READY-SHUTDOWN / HB
@@ -208,16 +224,31 @@ Used to mark an alert as a known external/upstream issue rather than an app faul
 - Ack state is server-side (shared across browser sessions, survives page refresh)
 - Ack state is in-memory and resets when the monitor process restarts
 
+**Container grouping:**
+- Each container can be assigned a **group** (NIPR or SIPR) and a free-text **sub-group**
+- Group is set by clicking the bottom-right tag on each card (cycles none→NIPR→SIPR→none)
+- Sub-group is typed directly on the card (click the label next to container name, type, Enter)
+- Both are persisted to `data/groups.json` (excluded from git — created automatically on first save)
+- `groups.json` format: `{"host:container": {"group": "NIPR", "subgroup": "web"}, ...}`
+- Old format `{"host:container": "NIPR"}` is auto-migrated on load
+
+**Login overlay:**
+- Dashboard shows a full-screen access code prompt before displaying any data
+- Code is checked client-side only — suitable for internal networks
+- Session is stored in `sessionStorage` — survives page refresh, cleared on tab close
+
 **API endpoints served by gelf_monitor.py:**
 ```
 GET  /               — serve dashboard.html
-GET  /api/status     — container list with status, last_severity, acked, ack_note
+GET  /api/status     — container list with status, last_severity, acked, ack_note, group, subgroup
 GET  /api/history    — stored alert events for a container (?container=host:name)
 GET  /api/stats      — per-container counts + session start time
 GET  /api/stream     — SSE stream for a container (?container=host:name)
 POST /api/ack        — acknowledge container {"key":"host:name","note":"..."}
 POST /api/unack      — clear acknowledgement {"key":"host:name"}
 POST /api/remove     — remove container from session {"key":"host:name"}
+POST /api/group      — set NIPR/SIPR group {"key":"host:name","group":"NIPR"}
+POST /api/subgroup   — set sub-group label {"key":"host:name","subgroup":"web"}
 ```
 
 **TLS certificates** live in `data/certs/`:
@@ -470,8 +501,9 @@ docker compose start your-service
     │   ├── ssl.lab.int.crt      ← TLS cert (CN=ssl.lab.int, valid to 2028-07-13)
     │   ├── ssl.lab.int.key      ← private key (not in git)
     │   └── lab.int-ca.crt       ← Lab Internal CA (import into browser for trust)
-    └── log/
-        └── alerts.log           ← WARNING+ alerts written here (not in git)
+    ├── log/
+    │   └── alerts.log           ← WARNING+ alerts written here (not in git)
+    └── groups.json              ← group/subgroup assignments (not in git, auto-created)
 
 /apps/logship/                   ← companion project (not in this repo)
 ├── docker-compose.yml
@@ -513,6 +545,19 @@ docker compose start your-service
   sent from the same host otherwise
 - logship self-monitoring bypasses Docker gelf driver (circular dependency) —
   synthetic GELF packets are built internally and sent directly through the pipeline
+- Heartbeat thread uses try/except around each emit — transient errors skip a beat
+  rather than killing the thread silently
+- `threading.excepthook` installed alongside `sys.excepthook` in `install_crash_handler()`
+  — background thread crashes also emit CRASH events (Python 3.8+)
+- SIGTERM handler sleeps 0.5s after stdout flush — gives Docker gelf driver time to
+  ship the SHUTDOWN log before the pipe closes
+- TRACEBACK keyword maps to CRITICAL severity — catches asyncio task tracebacks
+  printed to stderr that don't go through logging.critical()
+- Dashboard login is client-side access code only — not a real auth barrier;
+  fine for internal networks, not for public exposure
+- `groups.json` is excluded from git — contains runtime state, not configuration
+- `groups.json` auto-migrates old format `{key: "NIPR"}` to new `{key: {group, subgroup}}`
+- ERR/WARN badge auto-clears after N heartbeats: WARNING=1, ERROR=3, CRITICAL=never
 
 ---
 
