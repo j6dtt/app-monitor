@@ -63,21 +63,80 @@ if __name__ == "__main__":
 ```
 
 **For gunicorn apps** — use `gunicorn_config.py` hooks instead of `__main__`:
+
+Gunicorn has its own lifecycle hooks — do **not** use `if __name__ == "__main__":`.
+Instead, create or extend `gunicorn_config.py` in your project root and wire applog
+into gunicorn's server hooks:
+
 ```python
-# gunicorn_config.py (after eventlet.monkey_patch() if used)
+# gunicorn_config.py
+# If using eventlet/gevent workers, monkey_patch() must come first:
+#   import eventlet; eventlet.monkey_patch()
+
 from applog import emit, install_crash_handler, Heartbeat
 
 _heartbeat = None
 
-def on_starting(server):   emit("STARTUP")
+def on_starting(server):
+    emit("STARTUP")
+
 def when_ready(server):
     global _heartbeat
     emit("READY")
     _heartbeat = Heartbeat(interval_seconds=30)
     _heartbeat.start()
-def on_exit(server):       emit("SHUTDOWN")
+
+def on_exit(server):
+    emit("SHUTDOWN")
+
 def post_fork(server, worker):
+    # Install crash handler in each worker process
     install_crash_handler()
+```
+
+Tell gunicorn to use this file — either via the command line:
+```
+gunicorn -c gunicorn_config.py myapp:app
+```
+or in `docker-compose.yml`:
+```yaml
+command: gunicorn -c gunicorn_config.py myapp:app
+```
+
+**Gunicorn-specific notes:**
+- `register_shutdown_hooks()` is NOT used — gunicorn's `on_exit` hook replaces it
+- `on_starting` fires in the master process before workers fork — emit STARTUP there
+- `when_ready` fires when the master is ready to accept connections — emit READY + start heartbeat
+- `on_exit` fires when the master exits (gunicorn stop / `docker stop`) — emit SHUTDOWN
+- `post_fork` fires in each worker after fork — install crash handler per worker
+- Heartbeat runs in the master process; one heartbeat covers the whole gunicorn instance
+- The `_heartbeat` global prevents the object from being garbage-collected
+
+**With `APP_MONITOR` toggle for gunicorn:**
+```python
+# gunicorn_config.py
+import os
+_MONITOR = os.getenv("APP_MONITOR", "1") == "1"
+
+if _MONITOR:
+    from applog import emit, install_crash_handler, Heartbeat
+    _heartbeat = None
+
+def on_starting(server):
+    if _MONITOR: emit("STARTUP")
+
+def when_ready(server):
+    if _MONITOR:
+        global _heartbeat
+        emit("READY")
+        _heartbeat = Heartbeat(interval_seconds=30)
+        _heartbeat.start()
+
+def on_exit(server):
+    if _MONITOR: emit("SHUTDOWN")
+
+def post_fork(server, worker):
+    if _MONITOR: install_crash_handler()
 ```
 
 **Important rules:**
