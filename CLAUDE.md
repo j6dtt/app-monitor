@@ -617,6 +617,7 @@ docker compose start your-service
 - `groups.json` is excluded from git — contains runtime state, not configuration
 - `groups.json` auto-migrates old format `{key: "NIPR"}` to new `{key: {group, subgroup}}`
 - ERR/WARN badge auto-clears after N heartbeats: WARNING=1, ERROR=3, CRITICAL=never
+- Heartbeat timeout (DOWN detection): 60s default (2× the 30s heartbeat interval)
 
 ---
 

@@ -65,7 +65,13 @@ header h1{flex:1;text-align:center;font-size:18px;font-weight:800;letter-spacing
 .chost{font-size:12px;color:#7dd3fc;margin-top:3px;letter-spacing:.01em}
 .cmeta{display:flex;flex-wrap:wrap;gap:6px;font-size:11px;color:#64748b;align-items:center}
 .age{color:#94a3b8}
-.badge{padding:1px 5px;border-radius:3px;font-size:10px;font-weight:700}
+.badge{padding:1px 5px;border-radius:3px;font-size:10px;font-weight:700;cursor:default}
+#alert-tip{display:none;position:fixed;z-index:300;background:#0f172a;border:1px solid #334155;border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.6);padding:6px 0;min-width:280px;max-width:600px;pointer-events:none}
+#alert-tip .tip-row{display:grid;grid-template-columns:152px 38px 1fr;align-items:baseline;gap:6px;padding:5px 12px}
+#alert-tip .tip-row:hover{background:#1e293b}
+#alert-tip .tip-ts{font-size:10px;color:#64748b;font-variant-numeric:tabular-nums;white-space:nowrap}
+#alert-tip .tip-sev{font-size:9px;font-weight:800;text-align:center;padding:1px 4px;border-radius:3px}
+#alert-tip .tip-msg{font-size:11px;color:#cbd5e1;line-height:1.4;word-break:break-word}
 .be{background:#1c0a0a;color:#fca5a5}
 .bw{background:#1c1000;color:#fcd34d}
 .bd{background:#1c0a0a;color:#f87171}
@@ -154,6 +160,7 @@ button.danger:hover{background:#ef4444}
 </style>
 </head>
 <body>
+<div id="alert-tip"></div>
 <div id="login-overlay">
   <div class="login-box">
     <h2>Applications Monitor</h2>
@@ -511,10 +518,12 @@ function loadStatus(){
         ackBtn='<button class="ack-btn" onclick="clearAck(event,\''+ekey+'\')">Clear</button>';
       } else if(c.last_severity){
         var sev=(c.last_severity||'').toUpperCase();
-        if(sev==='CRITICAL')        badge='<span class="badge be">CRIT</span>';
-        else if(sev==='ERROR')      badge='<span class="badge be">ERR</span>';
-        else if(sev==='WARNING')    badge='<span class="badge bw">WARN</span>';
-        else if(sev==='DOWN')       badge='<span class="badge bd">DOWN</span>';
+        var alertsJson=JSON.stringify(c.recent_alerts||[]).replace(/&/g,'&amp;').replace(/"/g,'&quot;');
+        var tipAttr=' data-alerts="'+alertsJson+'"';
+        if(sev==='CRITICAL')        badge='<span class="badge be"'+tipAttr+'>CRIT</span>';
+        else if(sev==='ERROR')      badge='<span class="badge be"'+tipAttr+'>ERR</span>';
+        else if(sev==='WARNING')    badge='<span class="badge bw"'+tipAttr+'>WARN</span>';
+        else if(sev==='DOWN')       badge='<span class="badge bd"'+tipAttr+'>DOWN</span>';
         ackBtn='<button class="ack-btn" onclick="openAckModal(event,\''+ekey+'\')">Ack</button>';
       }
       var gtagCls=grp?'gtag-'+grp.toLowerCase():'gtag-none';
@@ -638,6 +647,59 @@ function loadStats(){
   }).catch(function(){});
 }
 setInterval(loadStats,30000); loadStats();
+
+// --- Alert badge tooltip ---
+(function(){
+  var tip=document.getElementById('alert-tip');
+  var SEV_CLS={CRITICAL:'tc',ERROR:'te',WARNING:'tw',DOWN:'td'};
+  var SEV_LBL={CRITICAL:'CRIT',ERROR:'ERR',WARNING:'WARN',DOWN:'DOWN'};
+
+  function escHtml(s){
+    return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+  function fmtTime(iso){
+    try{
+      var d=new Date(iso);
+      return d.toISOString().replace('T',' ').replace(/\.\d+Z$/,'Z');
+    }catch(e){return iso||'';}
+  }
+  function showTip(badge){
+    var raw=badge.getAttribute('data-alerts');
+    if(!raw) return;
+    var alerts;
+    try{alerts=JSON.parse(raw);}catch(e){return;}
+    if(!alerts||!alerts.length) return;
+    var a=alerts[0];
+    var sv=(a.severity||'').toUpperCase();
+    var cls=SEV_CLS[sv]||'';
+    var lbl=SEV_LBL[sv]||sv.slice(0,4);
+    tip.innerHTML='<div class="tip-row">'
+      +'<span class="tip-ts">'+fmtTime(a.ts)+'</span>'
+      +'<span class="badge '+cls+' tip-sev">'+lbl+'</span>'
+      +'<span class="tip-msg">'+escHtml(a.message||'')+'</span>'
+      +'</div>';
+    tip.style.display='block';
+    // Position above the badge, centered
+    var r=badge.getBoundingClientRect();
+    tip.style.left='0'; tip.style.top='0'; tip.style.transform='none';
+    var tw=tip.offsetWidth, th=tip.offsetHeight;
+    var left=r.left+r.width/2-tw/2;
+    var top=r.top-th-8;
+    // Keep inside viewport
+    left=Math.max(8,Math.min(left,window.innerWidth-tw-8));
+    if(top<8) top=r.bottom+8;
+    tip.style.left=left+'px';
+    tip.style.top=top+'px';
+  }
+  document.addEventListener('mouseover',function(e){
+    var b=e.target.closest('.badge[data-alerts]');
+    if(b){showTip(b);}else{tip.style.display='none';}
+  });
+  document.addEventListener('mouseout',function(e){
+    if(!e.relatedTarget||!e.relatedTarget.closest||!e.relatedTarget.closest('.badge[data-alerts]'))
+      tip.style.display='none';
+  });
+})();
 </script>
 </body>
 </html>

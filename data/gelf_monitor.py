@@ -83,7 +83,7 @@ import time
 import urllib.parse
 import zlib
 from http.server import BaseHTTPRequestHandler, HTTPServer
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
 
 # ── Severity keywords ─────────────────────────────────────────────────────────
@@ -450,16 +450,20 @@ class DashboardState:
     _HB_TO_CLEAR = {"WARNING": 1, "ERROR": 3}
     _VALID_GROUPS = {"NIPR", "SIPR"}
 
-    def __init__(self, max_history: int = 500):
+    def __init__(self, max_history: int = 50000):
         self._lock = threading.Lock()
+        self._file_lock = threading.Lock()
         self._alerts: list = []
         self._max = max_history
         self._last_severity: dict = {}          # key -> last alert severity
+        self._last_alert_msg: dict = {}         # key -> message text of last alert
         self._hb_since_alert: dict = {}         # key -> heartbeat count since last alert
         self._acks: dict = {}                   # key -> {"note": str, "ts": str}
         self._groups: dict    = self._load_groups()    # key -> {"group": str, "subgroup": str}
         self._subgroups: dict = {}                      # populated from _groups on load
         self._subscribers: dict = {}            # container key (or "*") -> [Queue, ...]
+        self._load_history()
+        self._start_midnight_reset()
 
     def record_event(self, host: str, container: str, ts: str,
                      message: str, severity, event: str, proto: str):
@@ -475,9 +479,11 @@ class DashboardState:
                 del self._alerts[0]
             if severity in ("CRITICAL", "ERROR", "WARNING") or event == "DOWN":
                 self._last_severity[key] = severity or event
+                self._last_alert_msg[key] = message or ""
                 self._hb_since_alert[key] = 0
             elif event in ("UP", "STARTUP", "READY"):
                 self._last_severity.pop(key, None)
+                self._last_alert_msg.pop(key, None)
                 self._hb_since_alert.pop(key, None)
             elif event == "HEARTBEAT":
                 last = self._last_severity.get(key)
@@ -486,21 +492,94 @@ class DashboardState:
                     count = self._hb_since_alert.get(key, 0) + 1
                     if count >= threshold:
                         self._last_severity.pop(key, None)
+                        self._last_alert_msg.pop(key, None)
                         self._hb_since_alert.pop(key, None)
                     else:
                         self._hb_since_alert[key] = count
             if event == "UP":
                 self._acks.pop(key, None)       # only watchdog RECOVERED clears ack
         self._push(key, entry)
+        self._append_history(entry)
 
     def get_last_severity(self, key: str):
         with self._lock:
             return self._last_severity.get(key)
 
+    def get_last_alert_msg(self, key: str):
+        with self._lock:
+            return self._last_alert_msg.get(key, "")
+
+    def get_recent_alerts(self, key: str, n: int = 5) -> list:
+        with self._lock:
+            result = []
+            for a in reversed(self._alerts):
+                if a["key"] != key:
+                    continue
+                if a["severity"] in ("CRITICAL", "ERROR", "WARNING") or a["event"] == "DOWN":
+                    result.append({
+                        "ts":       a["ts"],
+                        "severity": a["severity"] or a["event"],
+                        "message":  a["message"],
+                    })
+                    if len(result) >= n:
+                        break
+            return result  # newest first
+
+    # ── File-backed 24 h history ──────────────────────────────────────────────
+
+    def _load_history(self):
+        cutoff = (datetime.now(timezone.utc) - timedelta(hours=24)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        _os.makedirs(_os.path.dirname(_HISTORY_FILE), exist_ok=True)
+        try:
+            with open(_HISTORY_FILE, "r") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        entry = json.loads(line)
+                        if entry.get("ts", "") >= cutoff:
+                            self._alerts.append(entry)
+                    except Exception:
+                        continue
+        except FileNotFoundError:
+            # Create the file so its presence confirms the path is correct
+            open(_HISTORY_FILE, "w").close()
+
+    def _append_history(self, entry: dict):
+        if entry.get("event") == "HEARTBEAT":
+            return  # heartbeats are noise historically; omit from file
+        try:
+            with self._file_lock:
+                with open(_HISTORY_FILE, "a") as f:
+                    f.write(json.dumps(entry) + "\n")
+        except Exception:
+            pass
+
+    def _midnight_reset(self):
+        with self._lock:
+            self._alerts.clear()
+        try:
+            with self._file_lock:
+                open(_HISTORY_FILE, "w").close()
+        except Exception:
+            pass
+
+    def _start_midnight_reset(self):
+        def _run():
+            while True:
+                now  = datetime.now(timezone.utc)
+                next_midnight = (now + timedelta(days=1)).replace(
+                    hour=0, minute=0, second=0, microsecond=0)
+                time.sleep((next_midnight - now).total_seconds())
+                self._midnight_reset()
+        threading.Thread(target=_run, daemon=True, name="history-reset").start()
+
     def remove_container(self, key: str):
         with self._lock:
             self._alerts = [a for a in self._alerts if a["key"] != key]
             self._last_severity.pop(key, None)
+            self._last_alert_msg.pop(key, None)
             self._hb_since_alert.pop(key, None)
             self._acks.pop(key, None)
 
@@ -605,8 +684,9 @@ class DashboardState:
 # so you can edit the UI without restarting the monitor.
 
 import os as _os
-_DASHBOARD_HTML = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "dashboard.html")
-_GROUPS_FILE    = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "groups.json")
+_DASHBOARD_HTML  = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "dashboard.html")
+_GROUPS_FILE     = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "groups.json")
+_HISTORY_FILE    = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "log", "alerts_history.jsonl")
 
 
 # ── Web dashboard HTTP server ─────────────────────────────────────────────────
@@ -672,7 +752,9 @@ class DashboardHandler(BaseHTTPRequestHandler):
                     "container":     meta["container"],
                     "age":           age,
                     "status":        "DOWN" if is_dn else "UP",
-                    "last_severity": self.dashboard.get_last_severity(key),
+                    "last_severity":  self.dashboard.get_last_severity(key),
+                    "last_alert_msg": self.dashboard.get_last_alert_msg(key),
+                    "recent_alerts":  self.dashboard.get_recent_alerts(key),
                     "err_count":     sc.get("ERROR",    0),
                     "warn_count":    sc.get("WARNING",  0),
                     "down_count":    sc.get("DOWN",     0),
@@ -1245,10 +1327,10 @@ Examples:
     p.add_argument(
         "--heartbeat-timeout",
         type=int,
-        default=90,
+        default=60,
         help="Seconds of silence before a container is declared DOWN. "
-             "Should be at least 3x your app heartbeat interval (default interval "
-             "is 30s, so default timeout is 90s). (default: 90)"
+             "Should be at least 2x your app heartbeat interval (default interval "
+             "is 30s, so default timeout is 60s). (default: 60)"
     )
     p.add_argument(
         "--watchdog-interval",
