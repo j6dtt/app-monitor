@@ -1,6 +1,13 @@
-# LoadBalancer — external access from Docker hosts and HSG.
-# UDP 12101 and TCP 12201/12202 on different port numbers so mixed-protocol
-# coexists in one service (one MetalLB IP).
+# External LoadBalancer — single MetalLB IP for all external inbound traffic.
+# TCP and UDP use DIFFERENT port numbers (12201 vs 12101) so mixed-protocol
+# coexists without conflict on the same service.
+#
+# TCP 12201 — GELF from Docker hosts (gelf log driver, tcp://)
+# TCP 12202 — CEF from HSG security device
+# UDP 12101 — GELF from Docker hosts configured with udp:// gelf-address
+#
+# If VKS rejects mixed-protocol on a single LoadBalancer, split into two services:
+#   app-monitor-external-tcp (TCP 12201+12202) and app-monitor-external-udp (UDP 12101)
 apiVersion: v1
 kind: Service
 metadata:
@@ -11,10 +18,6 @@ spec:
   selector:
     app: app-monitor
   ports:
-    - name: gelf-udp
-      protocol: UDP
-      port: 12101
-      targetPort: 12101
     - name: gelf-tcp
       protocol: TCP
       port: 12201
@@ -23,3 +26,7 @@ spec:
       protocol: TCP
       port: 12202
       targetPort: 12202
+    - name: gelf-udp
+      protocol: UDP
+      port: 12101
+      targetPort: 12101

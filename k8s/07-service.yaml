@@ -1,9 +1,8 @@
-# ClusterIP — internal access for K8s pods and ingress backend.
-# UDP and TCP use different port numbers so they coexist in one service
-# without kube-proxy iptables conflicts.
-#
+# Internal ClusterIP services — single-protocol each to avoid kube-proxy issues.
+# K8s pods may use either; UDP is preferred for gelf_sender (fire-and-forget).
+
+# TCP ClusterIP — GELF TCP inbound and ingress backend for dashboard.
 # DNS: app-monitor.monitoring.svc.cluster.local
-# K8s pods: set GELF_HOST=app-monitor.monitoring.svc.cluster.local, GELF_PORT=12101
 apiVersion: v1
 kind: Service
 metadata:
@@ -14,10 +13,6 @@ spec:
   selector:
     app: app-monitor
   ports:
-    - name: gelf-udp
-      port: 12101
-      targetPort: 12101
-      protocol: UDP
     - name: gelf-tcp
       port: 12201
       targetPort: 12201
@@ -26,3 +21,21 @@ spec:
       port: 12202
       targetPort: 12202
       protocol: TCP
+---
+# UDP ClusterIP — GELF UDP for K8s pods using gelf_sender.
+# DNS: app-monitor-udp.monitoring.svc.cluster.local
+# Set GELF_HOST=app-monitor-udp.monitoring.svc.cluster.local, GELF_PORT=12101
+apiVersion: v1
+kind: Service
+metadata:
+  name: app-monitor-udp
+  namespace: monitoring
+spec:
+  type: ClusterIP
+  selector:
+    app: app-monitor
+  ports:
+    - name: gelf-udp
+      port: 12101
+      targetPort: 12101
+      protocol: UDP

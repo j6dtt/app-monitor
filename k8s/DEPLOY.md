@@ -29,14 +29,18 @@ Verify:
 
 Check that:
   - Pod status is Running
-  - service/app-monitor          has a ClusterIP  (UDP 12101 + TCP 12201 + CEF 12202)
-  - service/app-monitor-external has an EXTERNAL-IP from MetalLB (same ports)
+  - service/app-monitor          has a ClusterIP  (TCP 12201 + CEF 12202 — ingress + TCP pods)
+  - service/app-monitor-udp      has a ClusterIP  (UDP 12101 — K8s pods via gelf_sender)
+  - service/app-monitor-external has an EXTERNAL-IP from MetalLB (TCP 12201+12202, UDP 12101)
   - Ingress admits monitor.lab.int
 
 Dashboard:   https://monitor.lab.int
-GELF UDP:    <external-IP>:12101
 GELF TCP:    <external-IP>:12201
 CEF TCP:     <external-IP>:12202
+GELF UDP:    <external-IP>:12101  (Docker hosts using udp:// gelf-address)
+
+Note: if VKS rejects mixed TCP+UDP on app-monitor-external, split into:
+  app-monitor-external-tcp (TCP 12201+12202) and app-monitor-external-udp (UDP 12101)
 
 
 Step 2 — Deploy applog shared volume (once per cluster + once per app namespace)
@@ -69,10 +73,16 @@ Summary of what gets added to the app's Deployment:
       #-----app-monitor-------------------------------
       - name: APP_MONITOR
         value: "1"
+      # UDP (preferred — fire-and-forget, lower overhead):
       - name: GELF_HOST
-        value: "app-monitor.monitoring.svc.cluster.local"
+        value: "app-monitor-udp.monitoring.svc.cluster.local"
       - name: GELF_PORT
-        value: "12101"                                           # UDP port
+        value: "12101"
+      # TCP alternative (if UDP ClusterIP has issues in your VKS setup):
+      # - name: GELF_HOST
+      #   value: "app-monitor.monitoring.svc.cluster.local"
+      # - name: GELF_PORT
+      #   value: "12201"
       - name: CONTAINER_NAME
         value: "<stable-service-name>"
       - name: GELF_SOURCE_HOST
