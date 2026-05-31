@@ -1,11 +1,33 @@
+# LoadBalancer — TCP: external GELF TCP and CEF inbound from Docker hosts / HSG.
+# MetalLB assigns an external IP. Point Docker host gelf-address and HSG CEF output here.
+# Kept separate from UDP service — VKS and many LB implementations don't support
+# mixed TCP+UDP protocols on the same LoadBalancer service.
 apiVersion: v1
 kind: Service
 metadata:
-  name: app-monitor-external
+  name: app-monitor-external-tcp
   namespace: monitoring
-  annotations:
-    # MetalLB assigns a dedicated external IP for GELF/CEF traffic,
-    # separate from the nginx ingress IP used for the dashboard.
+spec:
+  type: LoadBalancer
+  selector:
+    app: app-monitor
+  ports:
+    - name: gelf-tcp
+      protocol: TCP
+      port: 12201
+      targetPort: 12201
+    - name: cef-tcp
+      protocol: TCP
+      port: 12202
+      targetPort: 12202
+---
+# LoadBalancer — UDP: external GELF UDP from Docker hosts or any non-K8s sender.
+# MetalLB assigns a separate external IP for UDP.
+apiVersion: v1
+kind: Service
+metadata:
+  name: app-monitor-external-udp
+  namespace: monitoring
 spec:
   type: LoadBalancer
   selector:
@@ -15,11 +37,3 @@ spec:
       protocol: UDP
       port: 12201
       targetPort: 12201
-    - name: gelf-tcp
-      protocol: TCP
-      port: 12201
-      targetPort: 12201
-    - name: cef-tcp
-      protocol: TCP
-      port: 12202
-      targetPort: 12202

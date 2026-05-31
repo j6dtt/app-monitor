@@ -12,8 +12,8 @@ Step 1 — Deploy app-monitor
     microk8s kubectl apply -f k8s/02-pv.yaml
     microk8s kubectl apply -f k8s/03-pvc.yaml
     microk8s kubectl apply -f k8s/06-deployment.yaml
-    microk8s kubectl apply -f k8s/07-service.yaml             # ClusterIP — GELF/CEF for K8s pods
-    microk8s kubectl apply -f k8s/08-service-external.yaml    # LoadBalancer — Docker hosts + HSG
+    microk8s kubectl apply -f k8s/07-service.yaml             # ClusterIP TCP + UDP (separate services)
+    microk8s kubectl apply -f k8s/08-service-external.yaml    # LoadBalancer TCP + UDP (separate services)
     # Create TLS secret for nginx (key is not in git — run from repo root):
     microk8s kubectl create secret tls app-monitor-tls \
       --cert data/certs/ssl.lab.int.crt \
@@ -29,13 +29,15 @@ Verify:
 
 Check that:
   - Pod status is Running
-  - service/app-monitor         has a ClusterIP (used by K8s pods and ingress)
-  - service/app-monitor-external has an EXTERNAL-IP from MetalLB (used by Docker hosts / HSG)
+  - service/app-monitor              has a ClusterIP  (TCP GELF + CEF, ingress backend)
+  - service/app-monitor-udp          has a ClusterIP  (UDP GELF for K8s pods via gelf_sender)
+  - service/app-monitor-external-tcp has an EXTERNAL-IP from MetalLB (TCP GELF + CEF for Docker hosts / HSG)
+  - service/app-monitor-external-udp has an EXTERNAL-IP from MetalLB (UDP GELF for external senders)
   - Ingress admits monitor.lab.int
 
-Dashboard:     https://monitor.lab.int
-GELF inbound:  <EXTERNAL-IP>:12201  (UDP and TCP)
-CEF inbound:   <EXTERNAL-IP>:12202  (TCP — from HSG)
+Dashboard:      https://monitor.lab.int
+GELF TCP+CEF:   <external-tcp-IP>:12201 / :12202
+GELF UDP:       <external-udp-IP>:12201
 
 
 Step 2 — Deploy applog shared volume (once per cluster + once per app namespace)
@@ -69,7 +71,7 @@ Summary of what gets added to the app's Deployment:
       - name: APP_MONITOR
         value: "1"
       - name: GELF_HOST
-        value: "app-monitor.monitoring.svc.cluster.local"
+        value: "app-monitor-udp.monitoring.svc.cluster.local"   # UDP ClusterIP
       - name: GELF_PORT
         value: "12201"
       - name: CONTAINER_NAME
@@ -103,8 +105,9 @@ Troubleshooting
 Pod not starting:
     microk8s kubectl describe pod -n monitoring -l app=app-monitor
 
-No EXTERNAL-IP on app-monitor-external (MetalLB not assigning):
-    microk8s kubectl describe svc app-monitor-external -n monitoring
+No EXTERNAL-IP on service (MetalLB not assigning):
+    microk8s kubectl describe svc app-monitor-external-tcp -n monitoring
+    microk8s kubectl describe svc app-monitor-external-udp -n monitoring
     microk8s kubectl get ipaddresspool -n metallb-system
 
 GELF packets not arriving (run with --raw to see raw packets):

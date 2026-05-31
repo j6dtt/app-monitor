@@ -1,6 +1,5 @@
-# ClusterIP — used by K8s pods sending GELF directly.
+# ClusterIP — TCP: used by ingress backend (dashboard) and CEF inbound.
 # DNS: app-monitor.monitoring.svc.cluster.local
-# Set GELF_HOST to this name in monitored pod specs.
 apiVersion: v1
 kind: Service
 metadata:
@@ -11,10 +10,6 @@ spec:
   selector:
     app: app-monitor
   ports:
-    - name: gelf-udp
-      port: 12201
-      targetPort: 12201
-      protocol: UDP
     - name: gelf-tcp
       port: 12201
       targetPort: 12201
@@ -23,3 +18,21 @@ spec:
       port: 12202
       targetPort: 12202
       protocol: TCP
+---
+# ClusterIP — UDP: used by K8s pods sending GELF directly via gelf_sender.
+# Set GELF_HOST=app-monitor-udp.monitoring.svc.cluster.local in pod specs.
+# Kept separate from TCP service — mixed protocol on same port causes kube-proxy issues.
+apiVersion: v1
+kind: Service
+metadata:
+  name: app-monitor-udp
+  namespace: monitoring
+spec:
+  type: ClusterIP
+  selector:
+    app: app-monitor
+  ports:
+    - name: gelf-udp
+      port: 12201
+      targetPort: 12201
+      protocol: UDP

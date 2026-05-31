@@ -1150,39 +1150,6 @@ def enqueue(msg: dict, sender_ip: str, proto: str,
     })
 
 
-# ── UDP receiver ──────────────────────────────────────────────────────────────
-
-def udp_receiver(bind, port, pattern, tracker, log_queue, stop_event, logger):
-    """
-    Listens for GELF packets over UDP.
-
-    UDP is fire-and-forget — packets may be lost under heavy load or
-    network issues but has zero connection overhead. Each UDP packet
-    is one complete GELF message (one log line).
-    """
-    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    sock.settimeout(1.0)
-    sock.bind((bind, port))
-    logger.info(f"{C['green']}UDP listening on {bind}:{port}{C['reset']}")
-
-    while not stop_event.is_set():
-        try:
-            data, addr = sock.recvfrom(65536)
-        except socket.timeout:
-            continue
-        except Exception as e:
-            if not stop_event.is_set():
-                logger.error(f"UDP error: {e}")
-            continue
-
-        msg = parse_gelf(data)
-        if msg:
-            enqueue(msg, addr[0], "UDP", pattern, tracker, log_queue)
-
-    sock.close()
-
-
 # ── TCP receiver ──────────────────────────────────────────────────────────────
 
 def handle_tcp_client(conn, addr, pattern, tracker, log_queue, stop_event):
