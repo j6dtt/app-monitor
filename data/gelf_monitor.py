@@ -968,7 +968,7 @@ def parse_cef(cef_str: str) -> dict | None:
     CEF format:
       CEF:version|Vendor|Product|Version|SignatureID|Name|Severity|extension
     Extension:
-      key=value; key=value;   (backslash-escapes: \\  \=  \|  \;)
+      key=value; key=value;   (backslash-escapes: \\  \\=  \\|  \\;)
 
     Returns the extension as a dict, or None if the string is not CEF.
     """

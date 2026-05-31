@@ -14,6 +14,12 @@ Step 1 — Deploy app-monitor
     microk8s kubectl apply -f k8s/06-deployment.yaml
     microk8s kubectl apply -f k8s/07-service.yaml             # ClusterIP — GELF/CEF for K8s pods
     microk8s kubectl apply -f k8s/08-service-external.yaml    # LoadBalancer — Docker hosts + HSG
+    # Create TLS secret for nginx (key is not in git — run from repo root):
+    microk8s kubectl create secret tls app-monitor-tls \
+      --cert data/certs/ssl.lab.int.crt \
+      --key  data/certs/ssl.lab.int.key \
+      -n monitoring
+
     microk8s kubectl apply -f k8s/09-frontend-ingress.yaml    # dashboard Service + Ingress at monitor.lab.int
 
 Verify:

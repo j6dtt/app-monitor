@@ -26,10 +26,7 @@ spec:
             - gelf_monitor.py
             - --alert-log
             - /app/log/alerts.log       # writes to data/log/alerts.log on host
-            - --cert
-            - certs/ssl.lab.int.crt
-            - --key
-            - certs/ssl.lab.int.key
+            # TLS is terminated by nginx ingress — gelf_monitor serves plain HTTP
           ports:
             - name: gelf-udp
               containerPort: 12201
