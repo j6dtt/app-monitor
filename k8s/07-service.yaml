@@ -1,6 +1,6 @@
-# ClusterIP — used by:
-#   1. K8s pods sending GELF directly (GELF_HOST=app-monitor.monitoring.svc.cluster.local)
-#   2. nginx ingress (TCP/UDP ConfigMaps + Ingress) routing external traffic
+# ClusterIP — used by K8s pods sending GELF directly.
+# DNS: app-monitor.monitoring.svc.cluster.local
+# Set GELF_HOST to this name in monitored pod specs.
 apiVersion: v1
 kind: Service
 metadata:
@@ -22,8 +22,4 @@ spec:
     - name: cef-tcp
       port: 12202
       targetPort: 12202
-      protocol: TCP
-    - name: dashboard
-      port: 4443
-      targetPort: 4443
       protocol: TCP

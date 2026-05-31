@@ -1,3 +1,20 @@
+# Dashboard frontend — ClusterIP service exposing port 4443 as the ingress backend.
+# Kept in this file alongside the Ingress since both are purely frontend concerns.
+apiVersion: v1
+kind: Service
+metadata:
+  name: app-monitor-dashboard
+  namespace: monitoring
+spec:
+  type: ClusterIP
+  selector:
+    app: app-monitor
+  ports:
+    - name: dashboard
+      port: 4443
+      targetPort: 4443
+      protocol: TCP
+---
 # HTTPS dashboard ingress — routes external HTTPS traffic to app-monitor port 4443.
 #
 # app-monitor handles TLS itself (with certs/ssl.lab.int.crt).
@@ -25,6 +42,6 @@ spec:
             pathType: Prefix
             backend:
               service:
-                name: app-monitor
+                name: app-monitor-dashboard
                 port:
                   number: 4443

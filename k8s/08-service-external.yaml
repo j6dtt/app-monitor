@@ -1,0 +1,25 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: app-monitor-external
+  namespace: monitoring
+  annotations:
+    # MetalLB assigns a dedicated external IP for GELF/CEF traffic,
+    # separate from the nginx ingress IP used for the dashboard.
+spec:
+  type: LoadBalancer
+  selector:
+    app: app-monitor
+  ports:
+    - name: gelf-udp
+      protocol: UDP
+      port: 12201
+      targetPort: 12201
+    - name: gelf-tcp
+      protocol: TCP
+      port: 12201
+      targetPort: 12201
+    - name: cef-tcp
+      protocol: TCP
+      port: 12202
+      targetPort: 12202

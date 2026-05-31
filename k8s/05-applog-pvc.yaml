@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: applog-pvc
+  namespace: default        # change to match the app's namespace
+spec:
+  accessModes:
+    - ReadOnlyMany
+  storageClassName: applog
+  resources:
+    requests:
+      storage: 10Mi

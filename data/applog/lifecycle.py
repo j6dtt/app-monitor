@@ -13,6 +13,7 @@ import time
 import traceback
 
 from .logging_setup import get_logger
+from .gelf_sender import send_gelf
 
 log = get_logger("lifecycle")
 
@@ -38,6 +39,7 @@ def emit(event: str, **kwargs):
     extra = {"_x_event": event}
     extra.update({f"_x_{k}": v for k, v in kwargs.items()})
     getattr(log, level)(f"Lifecycle: {event}", extra=extra)
+    send_gelf(event, level.upper(), event)
 
 
 def register_shutdown_hooks():

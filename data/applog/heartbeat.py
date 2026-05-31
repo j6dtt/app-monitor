@@ -14,6 +14,7 @@ Silence means:
 import threading
 
 from .logging_setup import get_logger
+from .gelf_sender import send_gelf
 
 log = get_logger("heartbeat")
 
@@ -48,3 +49,4 @@ class Heartbeat:
 
     def _emit(self):
         log.info("HEARTBEAT", extra={"_x_event": "HEARTBEAT"})
+        send_gelf("HEARTBEAT", "INFO", "HEARTBEAT")
