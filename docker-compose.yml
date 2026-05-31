@@ -9,10 +9,11 @@ services:
     command: >
       python gelf_monitor.py
       --alert-log /var/log/gelf-alerts.log
+      --udp-port 12101
       --cert certs/ssl.lab.int.crt
       --key  certs/ssl.lab.int.key
     ports:
-      - "12201:12201/udp"
+      - "12101:12101/udp"
       - "12201:12201/tcp"
       - "12202:12202/tcp"
       - "4443:4443/tcp"
