@@ -259,9 +259,9 @@ Example — based on a real gunicorn deployment (apiv2):
                 - name: APP_MONITOR
                   value: "1"              # set to "0" to disable monitoring
                 - name: GELF_HOST
-                  value: "app-monitor-udp.monitoring.svc.cluster.local"
+                  value: "app-monitor.monitoring.svc.cluster.local"
                 - name: GELF_PORT
-                  value: "12201"
+                  value: "12101"
                 - name: CONTAINER_NAME
                   value: "apiv2"          # stable name — must match across restarts
                 - name: GELF_SOURCE_HOST

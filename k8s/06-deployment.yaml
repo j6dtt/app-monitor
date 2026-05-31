@@ -26,10 +26,12 @@ spec:
             - gelf_monitor.py
             - --alert-log
             - /app/log/alerts.log       # writes to data/log/alerts.log on host
+            - --udp-port
+            - "12101"                   # UDP on different port than TCP to avoid kube-proxy conflict
             # TLS is terminated by nginx ingress — gelf_monitor serves plain HTTP
           ports:
             - name: gelf-udp
-              containerPort: 12201
+              containerPort: 12101
               protocol: UDP
             - name: gelf-tcp
               containerPort: 12201
