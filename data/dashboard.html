@@ -11,18 +11,24 @@ header{background:#1e293b;border-bottom:1px solid #334155;padding:14px 24px;disp
 header h1{flex:1;text-align:center;font-size:18px;font-weight:800;letter-spacing:.22em;text-transform:uppercase;background:linear-gradient(90deg,#38bdf8,#818cf8);-webkit-background-clip:text;background-clip:text;color:transparent}
 .h-side{flex:1}.h-right{flex:1;text-align:right}
 .upd{font-size:11px;color:#475569}
-.main{padding:20px;display:flex;flex-direction:column;gap:20px;max-width:1400px;margin:0 auto}
+.main{padding:20px;display:flex;flex-direction:column;gap:20px;max-width:1600px;margin:0 auto}
 .section{background:#1e293b;border:1px solid #334155;border-radius:8px;overflow:hidden}
 .sh{padding:11px 16px;border-bottom:1px solid #334155;display:flex;align-items:center;justify-content:space-between;gap:8px}
 .sh h2{font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.08em}
 .sh-right{display:flex;align-items:center;gap:8px}
-/* Container Status bar — elevated treatment */
-.sh-main{padding:16px 20px;border-bottom:1px solid #334155;display:flex;align-items:center;gap:8px;background:linear-gradient(135deg,#0f172a 0%,#162032 60%,#0f1e38 100%)}
-.sh-main h2{font-size:11px;font-weight:800;color:#475569;text-transform:uppercase;letter-spacing:.12em;white-space:nowrap}
-.kpis{display:flex;align-items:stretch;gap:8px;flex-wrap:wrap}
-.kpi{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:6px 18px;border-radius:8px;border:1px solid transparent;min-width:64px;gap:1px}
-.kpi-val{font-size:26px;font-weight:800;line-height:1;letter-spacing:-.02em}
-.kpi-lbl{font-size:8px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;opacity:.7}
+/* Container Status header bar */
+.sh-main{padding:10px 16px;border-bottom:1px solid #334155;display:flex;flex-direction:column;gap:7px;background:linear-gradient(135deg,#0f172a 0%,#162032 60%,#0f1e38 100%)}
+.sh-main-top{display:grid;grid-template-columns:1fr auto 1fr;align-items:center}
+.sh-main h2{font-size:11px;font-weight:800;color:#475569;text-transform:uppercase;letter-spacing:.12em;white-space:nowrap;flex-shrink:0}
+/* KPIs — horizontal compact pills */
+.kpis{display:flex;align-items:center;gap:6px;flex-shrink:0}
+.kpi{display:flex;flex-direction:row;align-items:center;gap:5px;padding:3px 9px;border-radius:5px;border:1px solid transparent}
+.kpi-val{font-size:14px;font-weight:800;line-height:1;letter-spacing:-.01em}
+.kpi-lbl{font-size:9px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;opacity:.65}
+/* Collapsible sections */
+.sh-toggle{background:none;border:none;color:#475569;cursor:pointer;font-size:11px;padding:2px 4px;line-height:1;flex-shrink:0}
+.sh-toggle:hover{color:#94a3b8}
+.section.collapsed>.sb{display:none}
 .kpi-total{background:#0d1b2e;border-color:#1e3a5f;color:#7dd3fc;box-shadow:0 0 12px rgba(56,189,248,.08)}
 .kpi-up{background:#052e16;border-color:#14532d;color:#4ade80;box-shadow:0 0 12px rgba(34,197,94,.1)}
 .kpi-err{background:#1c0808;border-color:#991b1b;color:#f87171;box-shadow:0 0 12px rgba(248,113,113,.12)}
@@ -30,7 +36,7 @@ header h1{flex:1;text-align:center;font-size:18px;font-weight:800;letter-spacing
 .kpi-down{background:#1c0a0a;border-color:#7f1d1d;color:#f87171;box-shadow:0 0 14px rgba(239,68,68,.15)}
 .sb{padding:16px}
 /* status grid */
-.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:10px;margin-bottom:14px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:10px;margin-bottom:14px}
 .card{background:#0f172a;border:1px solid #1e293b;border-radius:6px;padding:14px;cursor:pointer;transition:box-shadow .15s,background .15s;position:relative;box-shadow:inset 3px 0 0 #334155}
 .card:hover{background:#162032}
 .card.up{box-shadow:inset 3px 0 0 #22c55e}
@@ -46,8 +52,9 @@ header h1{flex:1;text-align:center;font-size:18px;font-weight:800;letter-spacing
 .sgtag:empty::before{content:'sub-group';color:#1e3a5f}
 .sgtag:focus{outline:1px solid #3b82f6;color:#cbd5e1;background:#0f172a}
 /* filter bar */
-.fbar{display:flex;flex-wrap:wrap;gap:6px;padding:10px 16px 0;align-items:center}
-.fbar-label{font-size:9px;color:#38bdf8;font-weight:800;text-transform:uppercase;letter-spacing:.12em;white-space:nowrap;border-left:2px solid #38bdf8;padding-left:6px;line-height:1.2}
+.fbar{display:flex;flex-wrap:wrap;gap:5px;align-items:center;flex:1}
+.fbar-group{display:flex;align-items:center;gap:4px;flex-wrap:wrap}
+.fbar-label{font-size:9px;color:#38bdf8;font-weight:800;text-transform:uppercase;letter-spacing:.12em;white-space:nowrap;border-left:2px solid #38bdf8;padding-left:5px;line-height:1.2}
 .ftag{padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700;cursor:pointer;border:1px solid #1e293b;color:#475569;background:transparent;transition:all .15s;white-space:nowrap}
 .ftag:hover{border-color:#334155;color:#94a3b8}
 .ftag.active{background:#1e3a5f;border-color:#3b82f6;color:#93c5fd}
@@ -181,13 +188,15 @@ button.danger:hover{background:#ef4444}
   <!-- 1. Container Status -->
   <div class="section">
     <div class="sh-main">
-      <h2>Container Status</h2>
-      <div style="flex:1;display:flex;justify-content:center"><div class="kpis" id="kpis"></div></div>
-      <div style="flex:0 0 auto;min-width:120px"></div>
+      <div class="sh-main-top">
+        <h2>Container Status</h2>
+        <div class="kpis" id="kpis"></div>
+        <div></div>
+      </div>
+      <div class="fbar" id="fbar"></div>
     </div>
     <div class="sb">
-      <div class="fbar" id="fbar"></div>
-      <div id="grid" class="grid" style="margin-top:10px"><p class="empty">Waiting for containers…</p></div>
+      <div id="grid" class="grid"><p class="empty">Waiting for containers…</p></div>
       <div class="legend">
         <span><span class="lc lc-crit"></span><b>CRIT</b> — unhandled exception / process crash</span>
         <span><span class="lc lc-err"></span><b>ERR</b> — ERROR keyword detected in log output</span>
@@ -222,8 +231,12 @@ button.danger:hover{background:#ef4444}
   </div>
 
   <!-- 3. Session Stats -->
-  <div class="section">
-    <div class="sh"><h2>Session Stats</h2><span class="upd" id="stats-since"></span></div>
+  <div class="section" id="stats-section">
+    <div class="sh" onclick="toggleSection('stats-section')" style="cursor:pointer">
+      <h2>Session Stats</h2>
+      <span class="upd" id="stats-since"></span>
+      <button class="sh-toggle" id="stats-toggle">▼</button>
+    </div>
     <div class="sb"><div id="st"><p class="empty">No data yet.</p></div></div>
   </div>
 
@@ -463,25 +476,28 @@ function loadStatus(){
     var fbar=document.getElementById('fbar');
     var chips='';
     if(hosts.length>1){
-      chips+='<span class="fbar-label">Host</span>';
+      chips+='<div class="fbar-group"><span class="fbar-label">Host</span>';
       hosts.forEach(function(h){
         var a=activeHostFilter===h?' active':'';
         chips+='<span class="ftag'+a+'" onclick="setFilter(\'host\',\''+h.replace(/'/g,"\\'")+'\')" title="Filter by host">'+h+'</span>';
       });
+      chips+='</div>';
     }
     if(groups.length){
-      chips+='<span class="fbar-label" style="margin-left:16px">Group</span>';
+      chips+='<div class="fbar-group"><span class="fbar-label">Group</span>';
       groups.forEach(function(g){
         var a=activeGroupFilter===g?' active':'';
         chips+='<span class="ftag'+a+'" onclick="setFilter(\'group\',\''+g+'\')" title="Filter by group">'+g+'</span>';
       });
+      chips+='</div>';
     }
     if(subgroups.length){
-      chips+='<span class="fbar-label" style="margin-left:16px">Sub-group</span>';
+      chips+='<div class="fbar-group"><span class="fbar-label">Sub-group</span>';
       subgroups.forEach(function(s){
         var a=activeSubgroupFilter===s?' active':'';
         chips+='<span class="ftag'+a+'" onclick="setFilter(\'subgroup\',\''+s.replace(/'/g,"\\'")+'\')" title="Filter by sub-group">'+s+'</span>';
       });
+      chips+='</div>';
     }
     fbar.innerHTML=chips;
 
@@ -493,9 +509,19 @@ function loadStatus(){
       return true;
     });
 
-    // Sort: group rank → subgroup α → container α
+    // Sort: active alerts first → group rank → subgroup α → container α
     var grpRank=function(g){return g==='NIPR'?0:g==='SIPR'?1:2;};
+    var alertRank=function(c){
+      if(c.status==='DOWN') return 0;
+      var sv=(c.last_severity||'').toUpperCase();
+      if(sv==='CRITICAL') return 1;
+      if(sv==='ERROR')    return 2;
+      if(sv==='WARNING')  return 3;
+      return 4;
+    };
     visible.sort(function(a,b){
+      var ar=alertRank(a), br=alertRank(b);
+      if(ar!==br) return ar-br;
       var ga=grpRank((a.group||'').toUpperCase()), gb=grpRank((b.group||'').toUpperCase());
       if(ga!==gb) return ga-gb;
       var sa=(a.subgroup||'').toLowerCase(), sb=(b.subgroup||'').toLowerCase();
@@ -647,6 +673,13 @@ function loadStats(){
   }).catch(function(){});
 }
 setInterval(loadStats,30000); loadStats();
+
+function toggleSection(id){
+  var sec=document.getElementById(id);
+  var btn=document.getElementById(id.replace('-section','-toggle'));
+  var collapsed=sec.classList.toggle('collapsed');
+  if(btn) btn.textContent=collapsed?'▶':'▼';
+}
 
 // --- Alert badge tooltip ---
 (function(){
