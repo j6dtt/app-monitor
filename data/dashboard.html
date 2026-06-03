@@ -23,7 +23,12 @@ header h1{flex:1;text-align:center;font-size:18px;font-weight:800;letter-spacing
 /* KPIs — horizontal compact pills */
 .kpis{display:flex;align-items:center;gap:6px;flex-shrink:0}
 .kpi{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;padding:6px 16px;border-radius:8px;border:1px solid transparent;min-width:64px}
-.kpi-val{font-size:32px;font-weight:800;line-height:1;letter-spacing:-.02em}
+.kpi-val{font-size:42px;font-weight:800;line-height:1;letter-spacing:-.02em}
+.kpi-total .kpi-val{text-shadow:0 0 18px rgba(56,189,248,.7)}
+.kpi-up    .kpi-val{text-shadow:0 0 18px rgba(34,197,94,.7)}
+.kpi-err   .kpi-val{text-shadow:0 0 18px rgba(248,113,113,.8)}
+.kpi-warn  .kpi-val{text-shadow:0 0 18px rgba(251,191,36,.7)}
+.kpi-down  .kpi-val{text-shadow:0 0 18px rgba(239,68,68,.8)}
 .kpi-lbl{font-size:10px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;opacity:.7}
 /* Collapsible sections */
 .sh-toggle{background:none;border:none;color:#475569;cursor:pointer;font-size:11px;padding:2px 4px;line-height:1;flex-shrink:0}
@@ -570,8 +575,8 @@ function loadStatus(){
         +gtag
         +'</div>';
     }).join('');
-    var nTotal=cs.length, nDown=0, nErr=0, nWarn=0, nUp=0;
-    cs.forEach(function(c){
+    var nTotal=visible.length, nDown=0, nErr=0, nWarn=0, nUp=0;
+    visible.forEach(function(c){
       var sv=(c.last_severity||'').toUpperCase();
       if(c.status==='DOWN') nDown++;
       else if(sv==='CRITICAL'||sv==='ERROR') nErr++;
