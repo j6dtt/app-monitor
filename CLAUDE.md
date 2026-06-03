@@ -194,7 +194,8 @@ Listens for GELF packets and serves a live HTTPS web dashboard.
 
 **Key behaviour:**
 
-- Listens on UDP and TCP port 12201 for standard GELF (from K8s pods or Docker)
+- Listens on UDP port 12101 for standard GELF (K8s pods via gelf_sender)
+- Listens on TCP port 12201 for standard GELF (direct Docker or K8s TCP clients)
 - Listens on TCP port 12202 for CEF→GELF inbound (from HSG in production)
 - Parses the GELF envelope to extract host, container name, timestamp
 - Parses `short_message` as JSON to extract your app's structured fields
@@ -211,7 +212,7 @@ Listens for GELF packets and serves a live HTTPS web dashboard.
 **Command line arguments:**
 ```
 --bind               Network interface (default: 0.0.0.0 = all interfaces)
---udp-port           UDP listen port (default: 12201)
+--udp-port           UDP listen port (default: 12201, Docker uses 12101)
 --tcp-port           TCP listen port (default: 12201)
 --cef-port           CEF→GELF TCP listen port (default: 12202)
 --no-udp             Disable UDP listener
@@ -240,26 +241,22 @@ the browser without restarting the monitor.
 
 **Dashboard sections (top to bottom):**
 
-1. **Container Status** — one card per container showing:
-   - Colour-coded left inset shadow: green (UP), amber (active alert), red (DOWN)
-   - Group stripe on top: dark green (NIPR), dark red (SIPR)
-   - Pulsing dot for DOWN containers
-   - Container name + inline sub-group label (editable, click to type)
-   - Host name in blue below container name
-   - `♥ Xs` live counter — seconds since last log received, ticks every second
-   - Alert badge: CRIT / ERR / WARN / DOWN (red/amber), or ACK (blue) when acknowledged
-   - Ack / Clear button (see Acknowledge section below)
-   - Remove button — removes container and history from the live session (no restart needed)
+1. **Container Status** — header bar + tile grid:
+   - Header line 1: KPI pills centered (TOTAL/UP/ERR/WARN/DOWN with glow), title left
+   - Header line 2: filter chips (HOST / GROUP / SUB-GROUP) — updates KPI counts when active
+   - Tiles sorted: active alerts first (DOWN→CRIT→ERR→WARN), then NIPR→SIPR→ungrouped,
+     then sub-group α, then container name α
+   - 6 tiles per row (minmax 230px on 1600px max-width panel)
+   - Each tile: colour left stripe (green/amber/red), group stripe top (NIPR/SIPR),
+     container name, sub-group label, host, ♥ age counter, alert badge, Ack/Clear/Remove
+   - Alert badge hover tooltip shows last alert: UTC timestamp + severity + message
    - Group tag button (bottom-right) — cycles none → NIPR → SIPR → none
-   - Click card to jump to that container's stream
-   - Filter bar above grid — clickable chips for HOST / GROUP / SUB-GROUP
-   - Cards sorted: NIPR → SIPR → ungrouped, then sub-group α, then container name α
+   - Click tile to jump to that container's stream
 
 2. **Alert Stream** — real-time log feed for one selected container at a time:
 
-3. **Session Stats** — per-container message and alert counts with "since HH:MM"
-   timestamp showing when the current monitor session started (all data is
-   in-memory; counts reset on monitor restart)
+3. **Session Stats** — collapsible (click header to toggle); per-container message and
+   alert counts with "since HH:MM" session start timestamp
 
 **Alert Stream** — real-time log feed for one selected container at a time:
    - Container selector dropdown + Connect/Disconnect button
@@ -429,10 +426,11 @@ services:
     command: >
       python gelf_monitor.py
       --alert-log /var/log/gelf-alerts.log
+      --udp-port 12101
       --cert certs/ssl.lab.int.crt
       --key  certs/ssl.lab.int.key
     ports:
-      - "12201:12201/udp"
+      - "12101:12101/udp"
       - "12201:12201/tcp"
       - "12202:12202/tcp"
       - "4443:4443/tcp"
@@ -441,27 +439,31 @@ services:
 
 ### Kubernetes — app-monitor
 
-Manifests in `k8s/`. Apply in order:
+Manifests in `k8s/` — files are numbered in apply order. See `k8s/DEPLOY.md` for
+full instructions. Quick reference:
 ```bash
-microk8s kubectl apply -f k8s/namespace.yaml
-microk8s kubectl apply -f k8s/pv.yaml
-microk8s kubectl apply -f k8s/pvc.yaml
-microk8s kubectl apply -f k8s/deployment.yaml
-microk8s kubectl apply -f k8s/service.yaml
-microk8s kubectl apply -f k8s/ingress.yaml
-microk8s kubectl apply -f k8s/nginx-tcp-configmap.yaml   # ingress namespace
-microk8s kubectl apply -f k8s/nginx-udp-configmap.yaml   # ingress namespace
-microk8s kubectl rollout restart daemonset nginx-ingress-microk8s-controller -n ingress
+microk8s kubectl apply -f k8s/01-namespace.yaml
+microk8s kubectl apply -f k8s/02-pv.yaml && microk8s kubectl apply -f k8s/03-pvc.yaml
+microk8s kubectl apply -f k8s/04-applog-pv.yaml && microk8s kubectl apply -f k8s/05-applog-pvc.yaml
+microk8s kubectl apply -f k8s/06-deployment.yaml
+microk8s kubectl apply -f k8s/07-service.yaml        # two ClusterIPs: TCP + UDP (separate)
+microk8s kubectl apply -f k8s/08-service-external.yaml  # LoadBalancer: TCP 12201+12202 + UDP 12101
+microk8s kubectl create secret tls app-monitor-tls \
+  --cert data/certs/ssl.lab.int.crt --key data/certs/ssl.lab.int.key -n monitoring
+microk8s kubectl apply -f k8s/09-frontend-ingress.yaml  # dashboard Service + Ingress
 ```
 
-Dashboard: `https://monitor.lab.int` (DNS → 172.16.0.91, the ingress LoadBalancer IP)
+Dashboard: `https://monitor.lab.int` (DNS → 172.16.0.91, nginx ingress LoadBalancer IP)
+GELF/CEF external: `<MetalLB-IP>:12101/udp`, `<MetalLB-IP>:12201/tcp`, `<MetalLB-IP>:12202/tcp`
 
-PV is pinned to node `ubt2` via `local` volume type + nodeAffinity.
-Data directory is `/apps/app-monitor/data` — same as the Docker deployment.
-Alert log writes to `/app/log/alerts.log` (= `data/log/alerts.log` on host).
+- PV pinned to node `ubt2`; data at `/apps/app-monitor/data` (= `/app` in container)
+- TLS terminated by nginx ingress; gelf_monitor serves plain HTTP in K8s
+- `k8s/07-service.yaml` has TWO ClusterIP services: `app-monitor` (TCP) and
+  `app-monitor-udp` (UDP 12101) — split to avoid kube-proxy mixed-protocol issues
+- UDP on K8s is still under investigation (VKS may not route UDP ClusterIP correctly)
 
 **Running Docker and K8s simultaneously on the same host is not supported** —
-ports 12201/12202/4443 conflict.
+ports conflict.
 
 ### Each app host — docker-compose.yml (Docker path)
 
@@ -473,22 +475,36 @@ services:
     logging:
       driver: gelf
       options:
-        gelf-address: "udp://<logship-host-ip>:9000"
+        gelf-address: "tcp://<logship-host-ip>:9000"
         tag: "{{.Name}}"
 ```
 
-### Each K8s pod (pending — applog GELF sender not yet built)
+### Each K8s pod — applog GELF sender
 
-Once `gelf_sender.py` is added to applog, add env vars to each pod:
+`gelf_sender.py` is built and integrated. Add to pod spec:
 ```yaml
 env:
   - name: GELF_HOST
-    value: "app-monitor.monitoring.svc.cluster.local"
+    value: "app-monitor-udp.monitoring.svc.cluster.local"
   - name: GELF_PORT
-    value: "12201"
+    value: "12101"
   - name: CONTAINER_NAME      # stable name — survives pod restarts
     value: "my-service-name"
+  - name: GELF_SOURCE_HOST
+    valueFrom:
+      fieldRef:
+        fieldPath: spec.nodeName
+volumeMounts:
+  - name: applog
+    mountPath: /app/applog
+    readOnly: true
+volumes:
+  - name: applog
+    persistentVolumeClaim:
+      claimName: applog-pvc
+      readOnly: true
 ```
+See `data/applog/applog_deployment_guide.md` for full instructions.
 
 ---
 
@@ -498,16 +514,21 @@ env:
 # 1. Start monitor with --raw to see all incoming packets
 python3 gelf_monitor.py --raw
 
-# 2. Send a manual GELF test packet
-echo '{"version":"1.1","host":"test","short_message":"test message","level":6}' \
-  | nc -u -w1 <monitor-ip> 12201
+# 2. Send a manual GELF test packet (use Python — nc has UDP issues)
+python3 -c "
+import socket,json
+s=socket.socket(socket.AF_INET,socket.SOCK_DGRAM)
+s.sendto(json.dumps({'version':'1.1','host':'test','_container_name':'test',
+  'short_message':json.dumps({'level':'ERROR','message':'test','event':''}),'level':3}).encode(),
+  ('<monitor-ip>',12101))
+"
 
 # 3. Check a container is using gelf driver
 docker inspect <container> | grep -A5 LogConfig
 
-# 4. Test DOWN detection — stop a container and wait 90s
+# 4. Test DOWN detection — stop a container and wait 60s
 docker compose stop your-service
-# Monitor should emit [DOWN] after 90s
+# Monitor should emit [DOWN] after 60s
 
 # 5. Test RECOVERED — restart it
 docker compose start your-service
@@ -539,30 +560,35 @@ docker compose start your-service
 /apps/app-monitor/               ← git repo root (j6dtt/app-monitor)
 ├── CLAUDE.md                    ← this file
 ├── docker-compose.yml           ← Docker deployment
-├── k8s/                         ← Kubernetes manifests
-│   ├── namespace.yaml
-│   ├── pv.yaml                  ← local PV pinned to node ubt2
-│   ├── pvc.yaml
-│   ├── deployment.yaml
-│   ├── service.yaml             ← ClusterIP for in-cluster access
-│   ├── ingress.yaml             ← HTTPS dashboard via monitor.lab.int
-│   ├── nginx-tcp-configmap.yaml ← nginx proxies TCP 12201+12202
-│   └── nginx-udp-configmap.yaml ← nginx proxies UDP 12201
-└── data/                        ← mounted as /app in container
-    ├── gelf_monitor.py          ← monitor + web server (run this)
-    ├── dashboard.html           ← web dashboard UI (read on each request)
-    ├── applog/                  ← copy into each monitored Python app
+├── k8s/                              ← Kubernetes manifests (numbered in apply order)
+│   ├── 01-namespace.yaml
+│   ├── 02-pv.yaml                    ← local PV pinned to node ubt2
+│   ├── 03-pvc.yaml
+│   ├── 04-applog-pv.yaml             ← shared read-only applog PV
+│   ├── 05-applog-pvc.yaml            ← applog PVC (apply per app namespace)
+│   ├── 06-deployment.yaml
+│   ├── 07-service.yaml               ← two ClusterIPs: app-monitor (TCP) + app-monitor-udp (UDP)
+│   ├── 08-service-external.yaml      ← LoadBalancer: TCP 12201+12202, UDP 12101
+│   ├── 09-frontend-ingress.yaml      ← dashboard ClusterIP + nginx ingress
+│   └── DEPLOY.md                     ← step-by-step deployment instructions
+└── data/                             ← mounted as /app in container
+    ├── gelf_monitor.py               ← monitor + web server (run this)
+    ├── dashboard.html                ← web dashboard UI (read on each request)
+    ├── applog/                       ← drop into each monitored Python app
     │   ├── __init__.py
     │   ├── logging_setup.py
     │   ├── lifecycle.py
-    │   └── heartbeat.py
+    │   ├── heartbeat.py
+    │   ├── gelf_sender.py            ← K8s UDP GELF sender (activated by GELF_HOST)
+    │   └── applog_deployment_guide.md
     ├── certs/
-    │   ├── ssl.lab.int.crt      ← TLS cert (CN=ssl.lab.int, valid to 2028-07-13)
-    │   ├── ssl.lab.int.key      ← private key (not in git)
-    │   └── lab.int-ca.crt       ← Lab Internal CA (import into browser for trust)
+    │   ├── ssl.lab.int.crt           ← TLS cert (CN=ssl.lab.int, valid to 2028-07-13)
+    │   ├── ssl.lab.int.key           ← private key (not in git)
+    │   └── lab.int-ca.crt            ← Lab Internal CA (import into browser for trust)
     ├── log/
-    │   └── alerts.log           ← WARNING+ alerts written here (not in git)
-    └── groups.json              ← group/subgroup assignments (not in git, auto-created)
+    │   ├── alerts.log                ← WARNING+ alerts (not in git)
+    │   └── alerts_history.jsonl      ← 24h rolling alert history (not in git, auto-created)
+    └── groups.json                   ← group/subgroup assignments (not in git, auto-created)
 
 /apps/logship/                   ← companion project (not in this repo)
 ├── docker-compose.yml
@@ -574,12 +600,12 @@ docker compose start your-service
 
 ## Known Decisions and Constraints
 
-- Port 12201 is the GELF default; port 9000 is logship's GELF receive port
+- Port 12101 is app-monitor's GELF UDP port (changed from 12201 to avoid mixed-protocol kube-proxy conflict)
+- Port 12201 is app-monitor's GELF TCP port; port 9000 is logship's GELF receive port
 - Port 12202 is app-monitor's CEF→GELF inbound port (TCP only, one message per connection)
 - The package is named `applog` not `logging` — `logging` shadows Python stdlib
 - `emit()` takes no arguments beyond the event name — no extras needed
-- Heartbeat interval is 30s; DOWN timeout is 90s (3x interval) — do not set
-  timeout lower than 3x interval or you will get false DOWN alerts
+- Heartbeat interval is 30s; DOWN timeout is 60s default (2× interval)
 - The monitor parses `short_message` as JSON to find your app's fields because
   Docker does not parse your JSON — it treats the entire stdout line as a string
 - No external dependencies anywhere — everything is Python stdlib only
@@ -623,7 +649,6 @@ docker compose start your-service
 
 ## Deferred / Not Yet Done
 
-- `applog/gelf_sender.py` — direct UDP GELF sender for K8s pods (activated by
-  `GELF_HOST` env var; plan saved in Claude Code plan file)
+- UDP not working in VKS — root cause unknown; TCP path works; see memory file
 - Alert forwarding (email, Slack, PagerDuty) when DOWN or CRITICAL detected
-- Persistent storage of alert history and ack state across monitor restarts
+- Persistent ack state across monitor restarts (alert history is persisted via alerts_history.jsonl)
