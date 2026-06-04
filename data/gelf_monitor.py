@@ -81,6 +81,7 @@ import sys
 import threading
 import time
 import urllib.parse
+import gzip
 import zlib
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from datetime import datetime, timezone, timedelta
@@ -235,19 +236,22 @@ def parse_gelf(data: bytes) -> dict | None:
     """
     Parses a raw GELF packet (bytes) into a Python dict.
 
-    GELF packets are JSON, optionally zlib-compressed.
-    Chunked GELF (magic bytes 0x1e 0x0f) is skipped — chunking is rare
-    and only occurs for very large single log lines.
+    GELF packets are JSON, optionally compressed.
+    Docker UDP gelf driver uses gzip (0x1f 0x8b); other senders may use zlib.
+    Chunked GELF (magic bytes 0x1e 0x0f) is skipped — not supported.
 
     Returns None if the packet cannot be parsed.
     """
     try:
         if len(data) >= 2 and data[:2] == b'\x1e\x0f':
             return None
-        try:
-            payload = zlib.decompress(data)
-        except zlib.error:
-            payload = data
+        if len(data) >= 2 and data[:2] == b'\x1f\x8b':
+            payload = gzip.decompress(data)
+        else:
+            try:
+                payload = zlib.decompress(data)
+            except zlib.error:
+                payload = data
         return json.loads(payload.decode("utf-8", errors="replace"))
     except Exception:
         return None
