@@ -194,10 +194,10 @@ Listens for GELF packets and serves a live HTTPS web dashboard.
 
 **Key behaviour:**
 
-- Listens on UDP port 12101 for standard GELF (K8s pods via gelf_sender)
+- Listens on UDP port 12101 for standard GELF (K8s pods via gelf_sender, Docker udp:// containers)
 - Listens on TCP port 12201 for standard GELF (direct Docker or K8s TCP clients)
 - Listens on TCP port 12202 for CEF→GELF inbound (from HSG in production)
-- Parses the GELF envelope to extract host, container name, timestamp
+- Parses GELF packets: plain JSON, gzip-compressed (Docker UDP gelf driver), or zlib-compressed
 - Parses `short_message` as JSON to extract your app's structured fields
 - Detects ERROR/WARNING by scanning the message text and your app's level field
 - GELF numeric level (stderr=ERROR) is only trusted when `short_message` is JSON —
@@ -614,6 +614,8 @@ docker compose start your-service
 - `--raw` flag is for debugging only — remove it in production (very verbose)
 - GELF level check is gated on `inner` (JSON-parsed short_message) — prevents
   false ERRORs from plain-text containers that write to stderr
+- Docker UDP gelf log driver gzip-compresses packets (`0x1f 0x8b` magic); TCP is
+  uncompressed; `parse_gelf()` handles gzip, zlib, and plain JSON — all three formats
 - Dashboard web server uses `socketserver.ThreadingMixIn` + stdlib `ssl` — no
   external web framework or TLS library needed
 - `dashboard.html` is read from disk on each HTTP request — UI changes take
@@ -649,6 +651,10 @@ docker compose start your-service
 
 ## Deferred / Not Yet Done
 
-- UDP not working in VKS — root cause unknown; TCP path works; see memory file
+- **Docker UDP gelf driver gzip-compresses packets** (`0x1f 0x8b`) — `parse_gelf()` in
+  gelf_monitor.py and logship.py both handle gzip, zlib, and plain JSON
+- UDP from Docker containers with `gelf-address: udp://` now works correctly
+- UDP from K8s pods (gelf_sender, plain JSON) also handled — VKS routing still unconfirmed
+- logship.py has the same gzip fix (see `/apps/logship/data/logship.py`)
 - Alert forwarding (email, Slack, PagerDuty) when DOWN or CRITICAL detected
 - Persistent ack state across monitor restarts (alert history is persisted via alerts_history.jsonl)
