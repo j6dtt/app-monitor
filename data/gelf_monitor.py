@@ -279,9 +279,9 @@ def extract_fields(msg: dict, sender_ip: str) -> tuple:
     host = msg.get("host") or sender_ip
 
     container = (
-        msg.get("_container_name")
+        msg.get("_tag")
+        or msg.get("_container_name")
         or msg.get("tag")
-        or msg.get("_tag")
         or "unknown"
     ).lstrip("/")
 
