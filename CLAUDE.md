@@ -373,7 +373,7 @@ Normalises GELF field names to a clean dict before CEF conversion:
 {
   "ts":        "2025-...",
   "host":      "docker-host-1",
-  "container": "my-app",        # from _container_name, stripped of leading /
+  "container": "my-app",        # from _tag (preferred) or _container_name, stripped of leading /
   "level":     "ERROR",
   "msg":       "database timeout",
   "event":     "",
@@ -475,9 +475,21 @@ services:
     logging:
       driver: gelf
       options:
-        gelf-address: "tcp://<logship-host-ip>:9000"
-        tag: "{{.Name}}"
+        gelf-address: "tcp://<logship-host-ip>:9000"   # TCP (uncompressed)
+        tag: "{{.Name}}"                                # always set — omitting defaults to container ID hash
 ```
+
+**UDP vs TCP for gelf-address:**
+- `tcp://` — uncompressed, reliable, works with all container network modes
+- `udp://` — gzip-compressed by Docker; works fine, but:
+  - Containers with `network_mode: host` must use `udp://127.0.0.1:9000` (loopback),
+    NOT `udp://172.16.0.46:9000` — the host's own external IP causes kernel packet drop
+  - Standard bridge containers can use either IP
+
+**Container display name (`tag` option):**
+- `tag: "{{.Name}}"` — dashboard shows the Docker container name (default, recommended)
+- `tag: "my-friendly-name"` — dashboard shows your custom name instead
+- `_tag` takes priority over `_container_name` in gelf_monitor and logship
 
 ### Each K8s pod — applog GELF sender
 
@@ -616,6 +628,12 @@ docker compose start your-service
   false ERRORs from plain-text containers that write to stderr
 - Docker UDP gelf log driver gzip-compresses packets (`0x1f 0x8b` magic); TCP is
   uncompressed; `parse_gelf()` handles gzip, zlib, and plain JSON — all three formats
+- `_tag` takes priority over `_container_name` for container display name — set
+  `tag: "{{.Name}}"` in logging options as default; override with a friendly string
+  to show a custom name on the dashboard without changing the container name
+- `network_mode: host` containers must use `udp://127.0.0.1:9000` (loopback) for logship —
+  using the host's external IP (`udp://172.16.0.46:9000`) causes kernel packet drop
+- K8s pod UDP (gelf_sender → app-monitor-udp ClusterIP:12101) confirmed working in VKS
 - Dashboard web server uses `socketserver.ThreadingMixIn` + stdlib `ssl` — no
   external web framework or TLS library needed
 - `dashboard.html` is read from disk on each HTTP request — UI changes take
@@ -651,10 +669,5 @@ docker compose start your-service
 
 ## Deferred / Not Yet Done
 
-- **Docker UDP gelf driver gzip-compresses packets** (`0x1f 0x8b`) — `parse_gelf()` in
-  gelf_monitor.py and logship.py both handle gzip, zlib, and plain JSON
-- UDP from Docker containers with `gelf-address: udp://` now works correctly
-- UDP from K8s pods (gelf_sender, plain JSON) also handled — VKS routing still unconfirmed
-- logship.py has the same gzip fix (see `/apps/logship/data/logship.py`)
 - Alert forwarding (email, Slack, PagerDuty) when DOWN or CRITICAL detected
 - Persistent ack state across monitor restarts (alert history is persisted via alerts_history.jsonl)
